@@ -40,8 +40,8 @@ const NOTION_VERSION = "2026-03-11";
 const NOTION_URL = "https://api.notion.com/v1";
 
 /* Nomi esatti delle proprietà nel tuo database Notion */
+/* (Il titolo non serve qui: viene riconosciuto automaticamente dal tipo di colonna.) */
 const PROP = {
-  titolo: "Titolo",
   pubblica: "Pubblica",
   corso: "Corso",
   autore: "Autore",
@@ -102,7 +102,13 @@ function mapPage(page) {
     ? corsoProp.select // { name, color }
     : corsoProp?.multi_select
       ? corsoProp.multi_select // [{ name, color }]
-      : [];
+      : corsoProp?.status
+        ? corsoProp.status // { name, color }
+        : corsoProp?.rich_text
+          ? plain(corsoProp.rich_text) // testo semplice (senza colore)
+          : [];
+  // Il titolo si trova per TIPO, non per nome: in Notion la colonna titolo può chiamarsi "Nome", "Name", "Titolo"…
+  const titleKey = Object.keys(p).find((k) => p[k].type === "title");
   const a = p[PROP.autore];
   const autore = a?.people
     ? a.people.map((u) => u.name).filter(Boolean)
@@ -115,7 +121,7 @@ function mapPage(page) {
   const data = d?.created_time || d?.date?.start || page.created_time;
   return {
     id: page.id,
-    titolo: plain(p[PROP.titolo]?.title) || "Senza titolo",
+    titolo: plain(p[titleKey]?.title) || "Senza titolo",
     pubblica: p[PROP.pubblica]?.checkbox === true,
     corso,
     autore,
@@ -207,6 +213,14 @@ async function listNotes() {
     results.push(...r.results);
     cursor = r.has_more ? r.next_cursor : null;
   } while (cursor);
+  // Diagnostica: scrive nel log i nomi e i tipi delle colonne trovate (utile se qualcosa risulta vuoto)
+  if (results[0])
+    console.log(
+      "Colonne trovate:",
+      Object.entries(results[0].properties)
+        .map(([k, v]) => `"${k}" (${v.type})`)
+        .join(", "),
+    );
   return results
     .filter((p) => p.object === "page" && !p.in_trash)
     .map(mapPage)
@@ -241,7 +255,8 @@ const send = (res, code, body, type = "application/json") => {
   res.end(typeof body === "string" ? body : JSON.stringify(body));
 };
 
-http.createServer(async (req, res) => {
+http
+  .createServer(async (req, res) => {
     const url = new URL(req.url, "http://x");
     try {
       if (req.method === "OPTIONS") return send(res, 204, "");

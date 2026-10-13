@@ -43,7 +43,7 @@ const NOTION_URL = "https://api.notion.com/v1";
 /* (Il titolo non serve qui: viene riconosciuto automaticamente dal tipo di colonna.) */
 const PROP = {
   pubblica: "Pubblica",
-  corso: "Corso",
+  corso: "class",
   autore: "Autore",
   data: "Data creazione",
 };
@@ -94,10 +94,14 @@ async function getDataSourceId() {
 
 /* ---------- Conversione proprietà Notion -> formato del frontend ---------- */
 const plain = (rt = []) => rt.map((t) => t.plain_text).join("");
+// Trova una colonna per nome ignorando maiuscole/minuscole e spazi ("class" = "Class" = " class ")
+const prop = (p, name) =>
+  p[name] ??
+  p[Object.keys(p).find((k) => k.trim().toLowerCase() === name.toLowerCase())];
 
 function mapPage(page) {
   const p = page.properties;
-  const corsoProp = p[PROP.corso];
+  const corsoProp = prop(p, PROP.corso);
   const corso = corsoProp?.select
     ? corsoProp.select // { name, color }
     : corsoProp?.multi_select
@@ -109,7 +113,7 @@ function mapPage(page) {
           : [];
   // Il titolo si trova per TIPO, non per nome: in Notion la colonna titolo può chiamarsi "Nome", "Name", "Titolo"…
   const titleKey = Object.keys(p).find((k) => p[k].type === "title");
-  const a = p[PROP.autore];
+  const a = prop(p, PROP.autore);
   const autore = a?.people
     ? a.people.map((u) => u.name).filter(Boolean)
     : a?.rich_text
@@ -117,7 +121,7 @@ function mapPage(page) {
       : a?.created_by
         ? [a.created_by.name].filter(Boolean)
         : [];
-  const d = p[PROP.data];
+  const d = prop(p, PROP.data);
   const data = d?.created_time || d?.date?.start || page.created_time;
   return {
     id: page.id,

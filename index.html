@@ -3,12 +3,14 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Appunti Universitari</title>
+<meta name="description" content="Appunti 5IB Zuccante" />
+<meta name="keywords" content="appunti, 5IB, zuccante, scuola, liceo, informatica, sistemi e reti, sistemi, tpsit" />
+<title>Appunti 5IB Zuccante</title>
+<link rel="stylesheet" href="style.css"/>
+<link rel="shortcut icon" href="favicon.ico" type="image/x-icon">
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-<link rel="stylesheet" href="style.css">
-<link rel="shortcut icon" href="favicon.ico" type="image/x-icon">
 <script src="https://cdn.tailwindcss.com"></script>
 <script>
   tailwind.config = {
@@ -27,6 +29,7 @@
     }
   }
 </script>
+
 </head>
 <body class="font-sans antialiased">
 
@@ -39,12 +42,14 @@
   <aside id="sidebar" class="fixed lg:static z-40 inset-y-0 left-0 w-[300px] -translate-x-full lg:translate-x-0 transition-transform duration-300 flex flex-col bg-ink-900/90 backdrop-blur-xl border-r border-white/[0.06]">
     <div class="px-5 pt-6 pb-4">
       <div class="flex items-center gap-3 mb-5">
-        <div class="h-9 w-9 rounded-xl grid place-items-center bg-gradient-to-br from-indigo-400 to-violet-600 shadow-lg shadow-indigo-500/20">
+        <div class="relative h-9 w-9 shrink-0 overflow-hidden rounded-xl grid place-items-center bg-gradient-to-br from-indigo-400 to-violet-600 shadow-lg shadow-indigo-500/20">
           <svg class="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6.25v13m0-13C10.83 5.48 9.25 5 7.5 5S4.17 5.48 3 6.25v13C4.17 18.48 5.75 18 7.5 18s3.33.48 4.5 1.25m0-13C13.17 5.48 14.75 5 16.5 5c1.75 0 3.33.48 4.5 1.25v13C19.83 18.48 18.25 18 16.5 18c-1.75 0-3.33.48-4.5 1.25"/></svg>
+          <!-- LOGO: metti logo.png accanto a index.html. Se il file non esiste, resta l'icona del libro. -->
+          <img src="logo.jpg" alt="" class="absolute inset-0 h-full w-full object-cover" onerror="this.remove()" />
         </div>
         <div>
           <h1 class="text-[15px] font-semibold tracking-tight text-white leading-tight">Appunti</h1>
-          <p class="text-xs text-slate-500">Biblioteca universitaria</p>
+          <p class="text-xs text-slate-500">5IB Zuccante 26/27</p>
         </div>
       </div>
 

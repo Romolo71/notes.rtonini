@@ -246,7 +246,9 @@ async function noteBlocks(id) {
     e.status = 404;
     throw e;
   }
-  return fetchBlocks(id);
+  // Il controllo qui sopra avviene SEMPRE (1 chiamata leggera): se togli "Pubblica" la nota sparisce subito.
+  // Si mette in cache solo il contenuto, e solo finché la pagina non viene modificata.
+  return cached(`b:${id}:${page.last_edited_time}`, () => fetchBlocks(id));
 }
 
 /* ---------- Server HTTP ---------- */
@@ -254,7 +256,7 @@ const send = (res, code, body, type = "application/json") => {
   res.writeHead(code, {
     "Content-Type": type + "; charset=utf-8",
     "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
-    "Cache-Control": "public, max-age=30",
+    "Cache-Control": "no-cache",
   });
   res.end(typeof body === "string" ? body : JSON.stringify(body));
 };
@@ -273,12 +275,7 @@ http
       const m = url.pathname.match(
         /^\/api\/notes\/([0-9a-f-]{32,36})\/blocks$/i,
       );
-      if (m)
-        return send(
-          res,
-          200,
-          await cached("b:" + m[1], () => noteBlocks(m[1])),
-        );
+      if (m) return send(res, 200, await noteBlocks(m[1]));
 
       if (url.pathname === "/" || url.pathname === "/appunti.html") {
         return send(

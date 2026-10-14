@@ -39,12 +39,34 @@ const NI = (...rt) => ({ type: "numbered_list_item", rich_text: rt });
 const COURSE_INFO = {
   "Sistemi e Reti": {
     docenti: [
-      { ruolo: "Teoria", nome: "Mario Rossi" },
-      { ruolo: "Laboratorio", nome: "Luca Bianchi" },
+      { ruolo: "Teoria", nome: "Sergio Mattiello" },
+      { ruolo: "Laboratorio", nome: "Andrea Funes Nova" },
     ],
   },
-  Matematica: { docenti: [{ nome: "Anna Verdi" }] },
-  // aggiungi gli altri corsi qui
+  Informatica: {
+    docenti: [
+      { ruolo: "Teoria", nome: "Francesco D'Este" },
+      { ruolo: "Laboratorio", nome: "Stefano Giacomello" },
+    ],
+  },
+  Tpsit: {
+    docenti: [
+      { ruolo: "Teoria", nome: "Marco Tramontini" },
+      { ruolo: "Laboratorio", nome: "Andrea Funes Nova" },
+    ],
+  },
+  GPOI: {
+    docenti: [
+      { ruolo: "Teoria", nome: "Marco Begolo" },
+      { ruolo: "Laboratorio", nome: "Daniele Dentico" },
+    ],
+  },
+  Matematica: { docenti: [{ nome: "Federica Paiaro" }] },
+  Italiano: { docenti: [{ nome: "Lorenzo De Rossi" }] },
+  Storia: { docenti: [{ nome: "Lorenzo De Rossi" }] },
+  Inglese: { docenti: [{ nome: "Graziella Viglietti" }] },
+  "Scienze Motorie": { docenti: [{ nome: "Eros Del Giudice" }] },
+  Religione: { docenti: [{ nome: "Fabiana Saccon" }] },
 };
 
 const MOCK_NOTES = [

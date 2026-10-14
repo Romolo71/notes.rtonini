@@ -241,6 +241,29 @@ body::before {
   padding: 0 0.2em;
   border-radius: 4px;
 }
+.nt figure {
+  margin: 1.5rem 0;
+}
+.nt figure img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0 auto;
+  border-radius: 14px;
+  border: 1px solid #1c2130;
+  background: #0f1218;
+  min-height: 80px;
+  transition: border-color 0.2s;
+}
+.nt figure a:hover img {
+  border-color: rgba(129, 140, 248, 0.5);
+}
+.nt figcaption {
+  text-align: center;
+  font-size: 0.85rem;
+  color: #64748b;
+  margin-top: 0.6rem;
+}
 mark.hl {
   background: rgba(129, 140, 248, 0.28);
   color: #fff;

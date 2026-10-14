@@ -804,6 +804,15 @@ function blocksHTML(blocks) {
       case "to_do":
         out += `<div class="todo ${b.checked ? "done" : ""}"><span class="box">${b.checked ? '<svg class="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3.5"><path stroke-linecap="round" stroke-linejoin="round" d="m5 13 4 4L19 7"/></svg>' : ""}</span><span class="t">${rt(b.rich_text)}</span></div>`;
         break;
+      case "image": {
+        const u = b.url || "";
+        if (!/^(https?:\/\/|\/(?!\/)|data:image\/)/.test(u)) break; // solo URL sicuri
+        const src = u.startsWith("/") ? API_BASE + u : u; // /api/... passa dal tuo server
+        const cap = rt(b.caption || []);
+        const alt = (b.caption || []).map((p) => p.plain_text).join("");
+        out += `<figure><a href="${esc(src)}" target="_blank" rel="noopener noreferrer"><img src="${esc(src)}" alt="${esc(alt)}" loading="lazy"></a>${cap ? `<figcaption>${cap}</figcaption>` : ""}</figure>`;
+        break;
+      }
     }
     i++;
   }

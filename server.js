@@ -14,13 +14,15 @@
      CACHE_SECONDS         (default 60)
 
    ENDPOINT
-     GET /api/notes               lista appunti con Pubblica = true
-     GET /api/notes/:id/blocks    contenuto di un appunto (solo se pubblico)
-     GET /                        serve appunti.html (comodo in locale)
+     GET /api/notes                      lista appunti con Pubblica = true
+     GET /api/notes/:id/blocks           contenuto di un appunto (solo se pubblico)
+     GET /api/notes/:id/img/:blockId     immagine di un appunto (solo se pubblico)
+     GET /                               serve appunti.html (comodo in locale)
    ===================================================================== */
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
+const { Readable } = require("stream");
 
 const {
   NOTION_TOKEN,
@@ -149,11 +151,30 @@ const SUPPORTED = new Set([
   "toggle",
 ]);
 
-function mapBlock(b) {
+// Per ogni pagina, gli ID delle immagini caricate su Notion
+// (serve a impedire di scaricare, tramite questa pagina, immagini di altre pagine)
+const imageIndex = new Map();
+
+function mapBlock(b, root) {
   if (b.type === "divider") return { type: "divider" };
   if (b.type === "heading_4")
     return { type: "heading_3", rich_text: b.heading_4.rich_text };
-  if (!SUPPORTED.has(b.type)) return null; // immagini, tabelle, embed… non gestiti dal frontend
+  if (b.type === "image") {
+    const img = b.image;
+    const isFile = img.type === "file";
+    if (isFile) {
+      // Le immagini caricate su Notion hanno un link che scade dopo ~1 ora:
+      // le serviamo noi, tramite /api/notes/:id/img/:blockId
+      if (!imageIndex.has(clean(root))) imageIndex.set(clean(root), new Set());
+      imageIndex.get(clean(root)).add(clean(b.id));
+    }
+    return {
+      type: "image",
+      url: isFile ? `/api/notes/${root}/img/${b.id}` : img.external?.url,
+      caption: img.caption || [],
+    };
+  }
+  if (!SUPPORTED.has(b.type)) return null; // tabelle, embed, video… non ancora gestiti
   const c = b[b.type];
   const out = {
     type: b.type === "toggle" ? "paragraph" : b.type,
@@ -165,14 +186,15 @@ function mapBlock(b) {
   return out;
 }
 
-async function fetchBlocks(blockId, depth = 0) {
+async function fetchBlocks(blockId, depth = 0, root = blockId) {
+  if (depth === 0) imageIndex.delete(clean(blockId));
   const out = [];
   let cursor;
   do {
     const q = `?page_size=100${cursor ? `&start_cursor=${cursor}` : ""}`;
     const r = await notion(`/blocks/${blockId}/children${q}`);
     for (const b of r.results) {
-      const m = mapBlock(b);
+      const m = mapBlock(b, root);
       if (m) out.push(m);
       // I blocchi annidati (toggle, sotto-elenchi, colonne) richiedono una chiamata a parte
       if (
@@ -180,7 +202,7 @@ async function fetchBlocks(blockId, depth = 0) {
         depth < 3 &&
         !["child_page", "child_database"].includes(b.type)
       ) {
-        out.push(...(await fetchBlocks(b.id, depth + 1)));
+        out.push(...(await fetchBlocks(b.id, depth + 1, root)));
       }
     }
     cursor = r.has_more ? r.next_cursor : null;
@@ -246,7 +268,37 @@ async function noteBlocks(id) {
     e.status = 404;
     throw e;
   }
-  return fetchBlocks(id);
+  // Il controllo qui sopra avviene SEMPRE (1 chiamata leggera): se togli "Pubblica" la nota sparisce subito.
+  // Si mette in cache solo il contenuto, e solo finché la pagina non viene modificata.
+  return cached(`b:${id}:${page.last_edited_time}`, () => fetchBlocks(id));
+}
+
+/* Scarica un'immagine di Notion e la gira al browser:
+   il link è sempre fresco e "Pubblica" viene ricontrollato a ogni richiesta. */
+async function noteImage(pageId, blockId, res) {
+  await noteBlocks(pageId); // verifica Pubblica e riempie l'indice delle immagini
+  if (!imageIndex.get(clean(pageId))?.has(clean(blockId))) {
+    const e = new Error("Not found");
+    e.status = 404;
+    throw e;
+  }
+  const b = await notion(`/blocks/${blockId}`);
+  const src = b.image?.file?.url || b.image?.external?.url;
+  const up = src ? await fetch(src) : null;
+  const type = up?.headers.get("content-type") || "";
+  if (!up?.ok || !type.startsWith("image/")) {
+    const e = new Error("Immagine non disponibile");
+    e.status = 502;
+    throw e;
+  }
+  res.writeHead(200, {
+    "Content-Type": type,
+    "Cache-Control": "private, max-age=300",
+    "X-Content-Type-Options": "nosniff",
+    "Content-Security-Policy": "sandbox", // un SVG aperto da solo non può eseguire script
+    "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
+  });
+  Readable.fromWeb(up.body).pipe(res);
 }
 
 /* ---------- Server HTTP ---------- */
@@ -254,7 +306,7 @@ const send = (res, code, body, type = "application/json") => {
   res.writeHead(code, {
     "Content-Type": type + "; charset=utf-8",
     "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
-    "Cache-Control": "public, max-age=30",
+    "Cache-Control": "no-cache",
   });
   res.end(typeof body === "string" ? body : JSON.stringify(body));
 };
@@ -270,15 +322,15 @@ http
       if (url.pathname === "/api/notes")
         return send(res, 200, await cached("list", listNotes));
 
+      const im = url.pathname.match(
+        /^\/api\/notes\/([0-9a-f-]{32,36})\/img\/([0-9a-f-]{32,36})$/i,
+      );
+      if (im) return await noteImage(im[1], im[2], res);
+
       const m = url.pathname.match(
         /^\/api\/notes\/([0-9a-f-]{32,36})\/blocks$/i,
       );
-      if (m)
-        return send(
-          res,
-          200,
-          await cached("b:" + m[1], () => noteBlocks(m[1])),
-        );
+      if (m) return send(res, 200, await noteBlocks(m[1]));
 
       if (url.pathname === "/" || url.pathname === "/appunti.html") {
         return send(

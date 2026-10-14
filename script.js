@@ -642,6 +642,64 @@ function visible() {
   });
 }
 
+/* Colore del corso -> variabile CSS --c (evidenziazione, barra di scorrimento, indice) */
+function applyTheme(target, course) {
+  target.style.setProperty(
+    "--c",
+    course && course !== "ALL" ? col(course, 66) : "#818cf8",
+  );
+}
+
+/* Indice laterale della nota, con evidenziazione della sezione corrente */
+let tocObserver;
+function buildToc() {
+  tocObserver?.disconnect();
+  const heads = [
+    ...document.querySelectorAll("#sheetBody h1, #sheetBody h2, #sheetBody h3"),
+  ];
+  const toc = $("#toc"),
+    sheet = $("#sheet"),
+    show = heads.length >= 2;
+  sheet.classList.toggle("max-w-5xl", show);
+  sheet.classList.toggle("max-w-3xl", !show);
+  toc.style.display = show ? "" : "none";
+  if (!show) {
+    toc.innerHTML = "";
+    return;
+  }
+  const base = Math.min(...heads.map((h) => +h.tagName[1]));
+  heads.forEach((h, i) => {
+    h.id = "sec-" + i;
+  });
+  toc.innerHTML = `<nav class="toc scroll sticky top-6"><p class="toc-label">Indice</p>${heads
+    .map(
+      (h, i) =>
+        `<a href="#sec-${i}" data-i="${i}" style="padding-left:${12 + (+h.tagName[1] - base) * 12}px">${esc(h.textContent)}</a>`,
+    )
+    .join("")}</nav>`;
+  const links = [...toc.querySelectorAll("a")];
+  const setActive = (i) =>
+    links.forEach((l, k) => l.classList.toggle("active", k === i));
+  setActive(0);
+  tocObserver = new IntersectionObserver(
+    (entries) => {
+      entries.forEach((en) => {
+        if (en.isIntersecting) setActive(+en.target.id.slice(4));
+      });
+    },
+    { root: $("#modalScroll"), rootMargin: "-10% 0px -80% 0px" },
+  );
+  heads.forEach((h) => tocObserver.observe(h));
+}
+$("#toc").addEventListener("click", (e) => {
+  const a = e.target.closest("a[data-i]");
+  if (!a) return;
+  e.preventDefault();
+  document
+    .getElementById("sec-" + a.dataset.i)
+    .scrollIntoView({ behavior: "smooth", block: "start" });
+});
+
 /* ---------- Render ---------- */
 function renderNav() {
   const total = state.notes.length;
@@ -796,6 +854,7 @@ function renderSync() {
 }
 
 function render() {
+  applyTheme(document.documentElement, state.course);
   const list = visible();
   renderNav();
   renderHead(list);
@@ -886,6 +945,9 @@ async function openNote(id) {
   if (!n) return;
   lastFocus = document.activeElement;
   const primary = n.corsi[0];
+  applyTheme($("#modal"), primary);
+  tocObserver?.disconnect();
+  $("#toc").style.display = "none";
   $("#sheet").style.setProperty("--accent", col(primary, 65));
   $("#sheetBar").style.background =
     `linear-gradient(90deg, ${col(primary, 60)}, ${colA(primary, 0.0)})`;
@@ -904,9 +966,11 @@ async function openNote(id) {
   $("#modalScroll").scrollTop = 0;
   $("#close").focus({ preventScroll: true });
   const blocks = await loadBlocks(n);
-  if (!$("#modal").classList.contains("hidden"))
+  if (!$("#modal").classList.contains("hidden")) {
     $("#sheetBody").innerHTML =
       blocksHTML(blocks) || "<p>Questa nota è vuota.</p>";
+    buildToc();
+  }
 }
 function closeNote() {
   $("#modal").classList.add("hidden");

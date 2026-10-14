@@ -1,3 +1,15 @@
+/* Colore del corso: cambia da solo quando selezioni un corso o apri una nota.
+   Lo imposta script.js (applyTheme); qui sotto c'è il valore di partenza. */
+@property --c {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #818cf8;
+}
+:root {
+  --c: #818cf8;
+  transition: --c 0.4s ease;
+}
+
 html,
 body {
   height: 100%;
@@ -26,24 +38,37 @@ body::before {
       transparent 60%
     );
 }
+
+/* ---------- Evidenziazione del testo (colore del corso) ---------- */
 ::selection {
-  background: rgba(129, 140, 248, 0.35);
+  background: color-mix(in srgb, var(--c) 40%, transparent);
+  color: #fff;
 }
+
+/* ---------- Barra di scorrimento (colore del corso) ---------- */
 .scroll::-webkit-scrollbar {
   width: 10px;
   height: 10px;
 }
 .scroll::-webkit-scrollbar-thumb {
-  background: #272d3f;
+  background: color-mix(in srgb, var(--c) 45%, #0b0d13);
   border-radius: 99px;
   border: 3px solid transparent;
   background-clip: content-box;
 }
 .scroll::-webkit-scrollbar-thumb:hover {
-  background: #3a425b;
+  background: var(--c);
   background-clip: content-box;
   border: 3px solid transparent;
 }
+/* Firefox */
+@supports (-moz-appearance: none) {
+  .scroll {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--c) 55%, #0b0d13) transparent;
+  }
+}
+
 .card {
   position: relative;
   background: linear-gradient(
@@ -96,7 +121,8 @@ body::before {
   );
   animation: shimmer 1.4s infinite;
 }
-/* Notion content */
+
+/* ---------- Contenuto Notion ---------- */
 .nt h1 {
   font-size: 1.75rem;
   font-weight: 700;
@@ -116,6 +142,12 @@ body::before {
   font-weight: 600;
   margin: 1.4rem 0 0.5rem;
   color: #e2e8f0;
+}
+/* quando clicchi un titolo nell'indice, lascia un po' d'aria sopra */
+.nt h1,
+.nt h2,
+.nt h3 {
+  scroll-margin-top: 1.5rem;
 }
 .nt p {
   line-height: 1.8;
@@ -264,9 +296,46 @@ body::before {
   color: #64748b;
   margin-top: 0.6rem;
 }
+
+/* Evidenziazione dei risultati di ricerca (colore del corso) */
 mark.hl {
-  background: rgba(129, 140, 248, 0.28);
+  background: color-mix(in srgb, var(--c) 30%, transparent);
   color: #fff;
   border-radius: 4px;
   padding: 0 2px;
+}
+
+/* ---------- Indice laterale della nota ---------- */
+.toc {
+  max-height: calc(100vh - 3rem);
+  overflow-y: auto;
+  border-left: 1px solid #1c2130;
+}
+.toc-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #64748b;
+  margin: 0 0 0.6rem 12px;
+}
+.toc a {
+  display: block;
+  font-size: 13px;
+  line-height: 1.35;
+  padding: 0.35rem 0.5rem 0.35rem 12px;
+  margin-left: -1px;
+  color: #8b94a7;
+  border-left: 2px solid transparent;
+  transition:
+    color 0.15s,
+    border-color 0.15s;
+}
+.toc a:hover {
+  color: #e2e8f0;
+}
+.toc a.active {
+  color: var(--c);
+  border-left-color: var(--c);
+  font-weight: 600;
 }

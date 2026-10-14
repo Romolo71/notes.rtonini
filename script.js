@@ -36,6 +36,17 @@ const H = (n, s) => ({ type: "heading_" + n, rich_text: [T(s)] });
 const LI = (...rt) => ({ type: "bulleted_list_item", rich_text: rt });
 const NI = (...rt) => ({ type: "numbered_list_item", rich_text: rt });
 
+const COURSE_INFO = {
+  "Sistemi e Reti": {
+    docenti: [
+      { ruolo: "Teoria", nome: "Mario Rossi" },
+      { ruolo: "Laboratorio", nome: "Luca Bianchi" },
+    ],
+  },
+  Matematica: { docenti: [{ nome: "Anna Verdi" }] },
+  // aggiungi gli altri corsi qui
+};
+
 const MOCK_NOTES = [
   {
     id: "n1",
@@ -640,6 +651,28 @@ function renderNav() {
   $("#nav").innerHTML = html;
 }
 
+function courseInfoHTML() {
+  if (state.course === "ALL") return "";
+  const key = Object.keys(COURSE_INFO).find(
+    (k) => norm(k) === norm(state.course),
+  );
+  const docenti = key ? COURSE_INFO[key].docenti : [];
+  if (!docenti.length) return "";
+  const c = state.course;
+  const rows = docenti
+    .map(
+      (d) => `<div class="flex items-center gap-3">
+      <span class="h-8 w-8 shrink-0 grid place-items-center rounded-full text-[11px] font-bold text-white" style="background:linear-gradient(135deg,${col(c, 55)},${col(c, 40)})">${esc(initials(d.nome))}</span>
+      <div class="min-w-0">
+        <div class="text-sm font-medium text-slate-100 truncate">${esc(d.nome)}</div>
+        ${d.ruolo ? `<div class="text-[11px] uppercase tracking-wider" style="color:${col(c, 72)}">${esc(d.ruolo)}</div>` : ""}
+      </div></div>`,
+    )
+    .join("");
+  return `<div class="shrink-0 rounded-2xl border border-white/[0.07] px-4 py-3.5 space-y-3 sm:min-w-[220px]" style="background:${colA(c, 0.06)}">
+    <div class="text-[10px] font-semibold uppercase tracking-widest text-slate-500">${docenti.length > 1 ? "Docenti" : "Docente"}</div>${rows}</div>`;
+}
+
 function renderHead(list) {
   const isAll = state.course === "ALL";
   const title = isAll ? "Tutti gli appunti" : state.course;
@@ -652,9 +685,14 @@ function renderHead(list) {
   const count = state.loading
     ? "Caricamento…"
     : `${list.length} ${list.length === 1 ? "appunto trovato" : "appunti trovati"}${q}`;
-  $("#head").innerHTML = `<div class="animate-fadeUp">
-    <h2 class="text-3xl sm:text-4xl font-bold tracking-tight text-white">${accent}${esc(title)}</h2>
-    <p class="mt-2 text-sm text-slate-400">${count}</p></div>`;
+  $("#head").innerHTML =
+    `<div class="animate-fadeUp flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
+    <div class="min-w-0">
+      <h2 class="text-3xl sm:text-4xl font-bold tracking-tight text-white">${accent}${esc(title)}</h2>
+      <p class="mt-2 text-sm text-slate-400">${count}</p>
+    </div>
+    ${courseInfoHTML()}
+  </div>`;
 }
 
 function cardHTML(n, i) {

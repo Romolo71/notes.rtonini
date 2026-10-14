@@ -155,6 +155,32 @@ const SUPPORTED = new Set([
 // (serve a impedire di scaricare, tramite questa pagina, immagini di altre pagine)
 const imageIndex = new Map();
 
+// Nome "pulito" per l'immagine: prima la didascalia scritta in Notion, altrimenti il nome originale del file.
+// È ciò che si vede nella scheda del browser e quando si salva l'immagine.
+function imageName(b) {
+  const slug = (s) =>
+    s
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 60);
+  let orig = "";
+  try {
+    const u = new URL(b.image.file?.url || b.image.external?.url);
+    orig = decodeURIComponent(u.pathname.split("/").pop());
+  } catch {}
+  const ext = (orig.match(/\.(png|jpe?g|gif|webp|svg|avif)$/i) || [
+    ".png",
+  ])[0].toLowerCase();
+  const base =
+    slug(plain(b.image.caption || [])) ||
+    slug(orig.replace(/\.[^.]+$/, "")) ||
+    "immagine";
+  return base + ext;
+}
+
 function mapBlock(b, root) {
   if (b.type === "divider") return { type: "divider" };
   if (b.type === "heading_4")
@@ -170,7 +196,9 @@ function mapBlock(b, root) {
     }
     return {
       type: "image",
-      url: isFile ? `/api/notes/${root}/img/${b.id}` : img.external?.url,
+      url: isFile
+        ? `/api/notes/${root}/img/${b.id}/${imageName(b)}`
+        : img.external?.url,
       caption: img.caption || [],
     };
   }
@@ -275,7 +303,8 @@ async function noteBlocks(id) {
 
 /* Scarica un'immagine di Notion e la gira al browser:
    il link è sempre fresco e "Pubblica" viene ricontrollato a ogni richiesta. */
-async function noteImage(pageId, blockId, res) {
+async function noteImage(pageId, blockId, name, res) {
+  const fileName = (name || "immagine").replace(/[^\w.\-]/g, "_").slice(0, 100);
   await noteBlocks(pageId); // verifica Pubblica e riempie l'indice delle immagini
   if (!imageIndex.get(clean(pageId))?.has(clean(blockId))) {
     const e = new Error("Not found");
@@ -293,6 +322,7 @@ async function noteImage(pageId, blockId, res) {
   }
   res.writeHead(200, {
     "Content-Type": type,
+    "Content-Disposition": `inline; filename="${fileName}"`,
     "Cache-Control": "private, max-age=300",
     "X-Content-Type-Options": "nosniff",
     "Content-Security-Policy": "sandbox", // un SVG aperto da solo non può eseguire script
@@ -323,9 +353,9 @@ http
         return send(res, 200, await cached("list", listNotes));
 
       const im = url.pathname.match(
-        /^\/api\/notes\/([0-9a-f-]{32,36})\/img\/([0-9a-f-]{32,36})$/i,
+        /^\/api\/notes\/([0-9a-f-]{32,36})\/img\/([0-9a-f-]{32,36})(?:\/([^/]*))?$/i,
       );
-      if (im) return await noteImage(im[1], im[2], res);
+      if (im) return await noteImage(im[1], im[2], im[3], res);
 
       const m = url.pathname.match(
         /^\/api\/notes\/([0-9a-f-]{32,36})\/blocks$/i,

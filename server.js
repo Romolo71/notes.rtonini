@@ -202,7 +202,10 @@ function mapBlock(b, root) {
       caption: img.caption || [],
     };
   }
-  if (!SUPPORTED.has(b.type)) return null; // tabelle, embed, video… non ancora gestiti
+  // Formula a tutta riga (Notion la scrive in KaTeX; il disegno lo fa il frontend)
+  if (b.type === "equation")
+    return { type: "equation", expression: b.equation.expression };
+  if (!SUPPORTED.has(b.type)) return null; // embed, video… non ancora gestiti
   const c = b[b.type];
   const out = {
     type: b.type === "toggle" ? "paragraph" : b.type,
@@ -214,6 +217,19 @@ function mapBlock(b, root) {
   return out;
 }
 
+// Tutti i figli di un blocco (gestisce la paginazione di Notion)
+async function listChildren(blockId) {
+  const all = [];
+  let cursor;
+  do {
+    const q = `?page_size=100${cursor ? `&start_cursor=${cursor}` : ""}`;
+    const r = await notion(`/blocks/${blockId}/children${q}`);
+    all.push(...r.results);
+    cursor = r.has_more ? r.next_cursor : null;
+  } while (cursor);
+  return all;
+}
+
 async function fetchBlocks(blockId, depth = 0, root = blockId) {
   if (depth === 0) imageIndex.delete(clean(blockId));
   const out = [];
@@ -222,6 +238,19 @@ async function fetchBlocks(blockId, depth = 0, root = blockId) {
     const q = `?page_size=100${cursor ? `&start_cursor=${cursor}` : ""}`;
     const r = await notion(`/blocks/${blockId}/children${q}`);
     for (const b of r.results) {
+      // Tabella: le righe sono blocchi figli, ognuna con le sue celle (liste di testo formattato)
+      if (b.type === "table") {
+        const rows = await listChildren(b.id);
+        out.push({
+          type: "table",
+          columnHeader: b.table.has_column_header,
+          rowHeader: b.table.has_row_header,
+          rows: rows
+            .filter((x) => x.type === "table_row")
+            .map((x) => x.table_row.cells),
+        });
+        continue;
+      }
       const m = mapBlock(b, root);
       if (m) out.push(m);
       // I blocchi annidati (toggle, sotto-elenchi, colonne) richiedono una chiamata a parte

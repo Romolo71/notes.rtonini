@@ -339,3 +339,67 @@ mark.hl {
   border-left-color: var(--c);
   font-weight: 600;
 }
+
+/* ---------- Formule matematiche (KaTeX, lo stesso motore che usa Notion) ---------- */
+.nt .katex {
+  font-size: 1.1em;
+}
+/* Formula a blocco: riquadro centrato, scorre in orizzontale se è molto larga */
+.nt .eq-block {
+  margin: 1.25rem 0;
+  padding: 0.9rem 1.1rem;
+  overflow-x: auto;
+  overflow-y: hidden;
+  border-radius: 12px;
+  border: 1px solid #1c2130;
+  background: color-mix(in srgb, var(--c) 5%, #0b0d13);
+  color: #f1f5f9;
+}
+.nt .eq-block .katex-display {
+  margin: 0;
+}
+.nt .eq-block .katex {
+  font-size: 1.25em;
+}
+/* Formula con errori di sintassi: KaTeX mostra il testo LaTeX (di default in rosso scuro, illeggibile sul nero) */
+.nt .katex-error {
+  color: #fda4af !important;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.85em;
+}
+
+/* ---------- Tabelle ---------- */
+.nt .tbl-wrap {
+  margin: 1.25rem 0;
+  overflow-x: auto;
+  border: 1px solid #1c2130;
+  border-radius: 12px;
+  background: rgba(7, 8, 12, 0.35);
+}
+.nt .nt-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.92rem;
+  line-height: 1.6;
+}
+.nt .nt-table th,
+.nt .nt-table td {
+  min-width: 6.5rem;
+  padding: 0.65rem 0.95rem;
+  text-align: left;
+  vertical-align: top;
+  color: #cbd5e1;
+  border-right: 1px solid #1c2130;
+  border-bottom: 1px solid #1c2130;
+}
+.nt .nt-table tr > :last-child {
+  border-right: 0;
+}
+.nt .nt-table tr:last-child > * {
+  border-bottom: 0;
+}
+.nt .nt-table th {
+  background: color-mix(in srgb, var(--c) 11%, #0f1218);
+  color: #f1f5f9;
+  font-weight: 600;
+}

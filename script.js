@@ -14,7 +14,7 @@
             blocks?: [...] } ]
    GET  {API_BASE}/api/notes/:id/blocks   (opzionale, caricato all'apertura)
      -> [ blocchi Notion (heading_1/2/3, paragraph, bulleted_list_item,
-          numbered_list_item, to_do, quote, callout, code, divider) ]
+          numbered_list_item, to_do, quote, callout, code, divider, image, equation, table) ]
 
    Il backend dovrebbe già filtrare Pubblica = true; il client lo
    ri-verifica comunque in modo rigido.
@@ -650,6 +650,14 @@ function applyTheme(target, course) {
   );
 }
 
+/* Testo di un titolo per l'indice: tiene le formule già renderizzate (senza la parte MathML nascosta) e toglie eventuali link */
+const headingHTML = (h) => {
+  const c = h.cloneNode(true);
+  c.querySelectorAll(".katex-mathml").forEach((n) => n.remove());
+  c.querySelectorAll("a").forEach((a) => a.replaceWith(...a.childNodes));
+  return c.innerHTML;
+};
+
 /* Indice laterale della nota, con evidenziazione della sezione corrente */
 let tocObserver;
 function buildToc() {
@@ -674,7 +682,7 @@ function buildToc() {
   toc.innerHTML = `<nav class="toc scroll sticky top-6"><p class="toc-label">Indice</p>${heads
     .map(
       (h, i) =>
-        `<a href="#sec-${i}" data-i="${i}" style="padding-left:${12 + (+h.tagName[1] - base) * 12}px">${esc(h.textContent)}</a>`,
+        `<a href="#sec-${i}" data-i="${i}" style="padding-left:${12 + (+h.tagName[1] - base) * 12}px">${headingHTML(h)}</a>`,
     )
     .join("")}</nav>`;
   const links = [...toc.querySelectorAll("a")];
@@ -863,9 +871,30 @@ function render() {
 }
 
 /* ---------- Rendering contenuto Notion ---------- */
+/* ---------- Formule (KaTeX: lo stesso motore che usa Notion) ---------- */
+function math(expr, display) {
+  const src = String(expr ?? "").trim();
+  if (!src) return "";
+  if (!window.katex) return `<code class="inline">${esc(src)}</code>`; // KaTeX non caricato: mostra il testo LaTeX
+  try {
+    return katex.renderToString(src, {
+      displayMode: !!display,
+      throwOnError: false, // formula sbagliata: mostra il testo invece di rompere la nota
+      strict: "ignore", // niente avvisi per lettere accentate dentro \text{...}
+      trust: false,
+      output: "htmlAndMathml", // MathML nascosto per screen reader e copia/incolla
+    });
+  } catch {
+    return `<code class="inline">${esc(src)}</code>`;
+  }
+}
+
 function rt(parts = []) {
   return parts
     .map((p) => {
+      // Formula dentro al testo (in Notion: "Inline equation")
+      if (p.type === "equation")
+        return `<span class="eq-inline">${math(p.equation?.expression ?? p.plain_text, false)}</span>`;
       let s = esc(p.plain_text ?? p.text?.content ?? "");
       const a = p.annotations || {};
       if (a.code) s = `<code class="inline">${s}</code>`;
@@ -917,6 +946,22 @@ function blocksHTML(blocks) {
       case "code":
         out += `<pre><code>${rt(b.rich_text)}</code></pre>`;
         break;
+      case "equation":
+        out += `<div class="eq-block scroll">${math(b.expression, true)}</div>`;
+        break;
+      case "table": {
+        const rows = b.rows || [];
+        if (!rows.length) break;
+        const cell = (c, ri, ci) => {
+          const byRow = b.header_row && ri === 0,
+            byCol = b.header_col && ci === 0;
+          return byRow || byCol
+            ? `<th scope="${byRow ? "col" : "row"}">${rt(c)}</th>`
+            : `<td>${rt(c)}</td>`;
+        };
+        out += `<div class="tbl-wrap scroll"><table class="nt-table">${rows.map((r, ri) => `<tr>${r.map((c, ci) => cell(c, ri, ci)).join("")}</tr>`).join("")}</table></div>`;
+        break;
+      }
       case "divider":
         out += "<hr>";
         break;

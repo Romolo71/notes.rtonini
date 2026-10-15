@@ -161,7 +161,7 @@ function imageName(b) {
   const slug = (s) =>
     s
       .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[̀-ͯ]/g, "")
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-+|-+$/g, "")
@@ -185,6 +185,10 @@ function mapBlock(b, root) {
   if (b.type === "divider") return { type: "divider" };
   if (b.type === "heading_4")
     return { type: "heading_3", rich_text: b.heading_4.rich_text };
+  // Formula a blocco: Notion la salva come stringa KaTeX (LaTeX) in equation.expression.
+  // Le formule dentro al testo (inline) restano nei rich_text con type "equation": le gestisce il frontend.
+  if (b.type === "equation")
+    return { type: "equation", expression: b.equation?.expression || "" };
   if (b.type === "image") {
     const img = b.image;
     const isFile = img.type === "file";
@@ -202,10 +206,7 @@ function mapBlock(b, root) {
       caption: img.caption || [],
     };
   }
-  // Formula a tutta riga (Notion la scrive in KaTeX; il disegno lo fa il frontend)
-  if (b.type === "equation")
-    return { type: "equation", expression: b.equation.expression };
-  if (!SUPPORTED.has(b.type)) return null; // embed, video… non ancora gestiti
+  if (!SUPPORTED.has(b.type)) return null; // embed, video, file… non ancora gestiti
   const c = b[b.type];
   const out = {
     type: b.type === "toggle" ? "paragraph" : b.type,
@@ -217,7 +218,7 @@ function mapBlock(b, root) {
   return out;
 }
 
-// Tutti i figli di un blocco (gestisce la paginazione di Notion)
+// Elenca TUTTI i figli di un blocco (Notion li restituisce a pagine da 100)
 async function listChildren(blockId) {
   const all = [];
   let cursor;
@@ -233,37 +234,32 @@ async function listChildren(blockId) {
 async function fetchBlocks(blockId, depth = 0, root = blockId) {
   if (depth === 0) imageIndex.delete(clean(blockId));
   const out = [];
-  let cursor;
-  do {
-    const q = `?page_size=100${cursor ? `&start_cursor=${cursor}` : ""}`;
-    const r = await notion(`/blocks/${blockId}/children${q}`);
-    for (const b of r.results) {
-      // Tabella: le righe sono blocchi figli, ognuna con le sue celle (liste di testo formattato)
-      if (b.type === "table") {
-        const rows = await listChildren(b.id);
-        out.push({
-          type: "table",
-          columnHeader: b.table.has_column_header,
-          rowHeader: b.table.has_row_header,
-          rows: rows
-            .filter((x) => x.type === "table_row")
-            .map((x) => x.table_row.cells),
-        });
-        continue;
-      }
-      const m = mapBlock(b, root);
-      if (m) out.push(m);
-      // I blocchi annidati (toggle, sotto-elenchi, colonne) richiedono una chiamata a parte
-      if (
-        b.has_children &&
-        depth < 3 &&
-        !["child_page", "child_database"].includes(b.type)
-      ) {
-        out.push(...(await fetchBlocks(b.id, depth + 1, root)));
-      }
+  for (const b of await listChildren(blockId)) {
+    // Una tabella è un blocco "table" le cui RIGHE sono blocchi figli ("table_row"):
+    // le leggiamo qui e le consegniamo al frontend come un unico blocco con tutte le celle.
+    if (b.type === "table") {
+      const rows = (await listChildren(b.id))
+        .filter((r) => r.type === "table_row")
+        .map((r) => r.table_row.cells); // ogni cella è una lista di rich_text
+      out.push({
+        type: "table",
+        header_row: b.table?.has_column_header === true,
+        header_col: b.table?.has_row_header === true,
+        rows,
+      });
+      continue;
     }
-    cursor = r.has_more ? r.next_cursor : null;
-  } while (cursor);
+    const m = mapBlock(b, root);
+    if (m) out.push(m);
+    // I blocchi annidati (toggle, sotto-elenchi, colonne) richiedono una chiamata a parte
+    if (
+      b.has_children &&
+      depth < 3 &&
+      !["child_page", "child_database"].includes(b.type)
+    ) {
+      out.push(...(await fetchBlocks(b.id, depth + 1, root)));
+    }
+  }
   return out;
 }
 

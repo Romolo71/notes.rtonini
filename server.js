@@ -8,7 +8,11 @@
    VARIABILI D'AMBIENTE
      NOTION_TOKEN          (obbligatoria) token della tua integrazione Notion
      NOTION_DATABASE_ID    (obbligatoria) ID del database degli appunti
-     NOTION_DATA_SOURCE_ID (opzionale) se lo conosci, salta la ricerca automatica
+     NOTION_DATA_SOURCE_ID (opzionale) fonte dati degli appunti; se manca si usa la prima che non si chiama "voti"
+     NOTION_VOTI_DATA_SOURCE_ID (opzionale) fonte dati delle correzioni ("voti")
+     NOTION_VOTI_DATABASE_ID    (opzionale) se le correzioni sono in un database separato
+                                (se nessuna delle due è impostata, cerca nel database una fonte che
+                                 contiene "voti" o "correzion" nel nome)
      PORT                  (default 3000)
      ALLOWED_ORIGIN        (default *) dominio del sito che chiama l'API
      CACHE_SECONDS         (default 60)
@@ -17,6 +21,8 @@
      GET /api/notes                      lista appunti con Pubblica = true
      GET /api/notes/:id/blocks           contenuto di un appunto (solo se pubblico)
      GET /api/notes/:id/img/:blockId     immagine di un appunto (solo se pubblico)
+     GET /api/notes/:id/icon             icona della pagina caricata su Notion (solo se pubblica)
+     GET /api/corrections                lista correzioni (fonte "voti") con Pubblica = true
      GET /                               serve appunti.html (comodo in locale)
    ===================================================================== */
 const http = require("http");
@@ -28,6 +34,8 @@ const {
   NOTION_TOKEN,
   NOTION_DATABASE_ID,
   NOTION_DATA_SOURCE_ID,
+  NOTION_VOTI_DATA_SOURCE_ID,
+  NOTION_VOTI_DATABASE_ID,
   PORT = 3000,
   ALLOWED_ORIGIN = "*",
   CACHE_SECONDS = 60,
@@ -81,17 +89,53 @@ async function notion(endpoint, { method = "GET", body } = {}, attempt = 0) {
   return res.json();
 }
 
-/* ---------- Database -> data source ---------- */
-let dataSourceId = NOTION_DATA_SOURCE_ID || null;
-async function getDataSourceId() {
-  if (dataSourceId) return dataSourceId;
+/* ---------- Fonti dati: "appunti" e "voti" ----------
+   Dal 2025 un database Notion può avere più "fonti dati" (data source). Le riconosciamo così:
+   - appunti: NOTION_DATA_SOURCE_ID se impostata, altrimenti la prima fonte che NON si chiama "voti"/"correzioni"
+   - voti:    NOTION_VOTI_DATA_SOURCE_ID se impostata; oppure la prima fonte del database NOTION_VOTI_DATABASE_ID;
+              oppure, nello stesso database, la fonte il cui nome contiene "voti" o "correzion" */
+let sourcesPromise = null;
+function getSources() {
+  if (!sourcesPromise)
+    sourcesPromise = resolveSources().catch((e) => {
+      sourcesPromise = null; // riprova alla prossima richiesta
+      throw e;
+    });
+  return sourcesPromise;
+}
+async function resolveSources() {
   const db = await notion(`/databases/${NOTION_DATABASE_ID}`);
-  dataSourceId = db.data_sources?.[0]?.id;
-  if (!dataSourceId)
+  const list = db.data_sources || []; // [{ id, name }]
+  console.log(
+    "Fonti dati del database:",
+    list.map((s) => `"${s.name}" (${s.id})`).join(", ") || "nessuna",
+  );
+  const isVoti = (s) => /voti|correzion/i.test(s.name || "");
+  const notes =
+    NOTION_DATA_SOURCE_ID || (list.find((s) => !isVoti(s)) || list[0])?.id;
+  if (!notes)
     throw new Error(
       "Nessun data source trovato: imposta NOTION_DATA_SOURCE_ID.",
     );
-  return dataSourceId;
+  const dbs = new Set([clean(NOTION_DATABASE_ID)]);
+  let voti = NOTION_VOTI_DATA_SOURCE_ID || null;
+  if (!voti && NOTION_VOTI_DATABASE_ID) {
+    try {
+      const vdb = await notion(`/databases/${NOTION_VOTI_DATABASE_ID}`);
+      voti = vdb.data_sources?.[0]?.id || null;
+      dbs.add(clean(NOTION_VOTI_DATABASE_ID));
+    } catch (e) {
+      console.error("Database dei voti non raggiungibile:", e.message);
+    }
+  }
+  if (!voti)
+    voti =
+      list.find((s) => clean(s.id) !== clean(notes) && isVoti(s))?.id || null;
+  if (voti && clean(voti) === clean(notes)) voti = null;
+  console.log("Fonte appunti:", notes, "| fonte voti:", voti || "non trovata");
+  // Le uniche fonti da cui si può leggere: tutto il resto del database resta privato
+  const sources = new Set([notes, voti].filter(Boolean).map(clean));
+  return { notes, voti, sources, dbs };
 }
 
 /* ---------- Conversione proprietà Notion -> formato del frontend ---------- */
@@ -103,7 +147,12 @@ const prop = (p, name) =>
 
 function mapPage(page) {
   const p = page.properties;
-  const corsoProp = prop(p, PROP.corso);
+  // Se la colonna del corso ha un altro nome (succede nella fonte "voti"), si usa la prima colonna Select/Multi-select/Status
+  const corsoProp =
+    prop(p, PROP.corso) ||
+    Object.values(p).find((v) =>
+      ["select", "multi_select", "status"].includes(v.type),
+    );
   const corso = corsoProp?.select
     ? corsoProp.select // { name, color }
     : corsoProp?.multi_select
@@ -133,7 +182,29 @@ function mapPage(page) {
     autore,
     dataCreazione: data,
     url: page.url,
+    icon: mapIcon(page),
   };
+}
+
+/* Icona della pagina, come la mostra Notion: emoji, immagine caricata, link esterno o icona nativa */
+function mapIcon(page) {
+  const ic = page.icon;
+  if (!ic) return null;
+  if (ic.type === "emoji") return { type: "emoji", emoji: ic.emoji };
+  if (ic.type === "external" && ic.external?.url)
+    return { type: "url", url: ic.external.url };
+  if (ic.type === "custom_emoji" && ic.custom_emoji?.url)
+    return { type: "url", url: ic.custom_emoji.url };
+  // Le immagini caricate su Notion hanno un link che scade dopo ~1 ora: le serviamo noi da /api/notes/:id/icon
+  if (ic.type === "file")
+    return { type: "url", url: `/api/notes/${page.id}/icon` };
+  // Icone native di Notion (nome + colore): indirizzo pubblico di Notion, il sito ripiega sulla favicon della home se non si carica
+  if (ic.type === "icon" && ic.icon?.name)
+    return {
+      type: "url",
+      url: `https://www.notion.so/icons/${ic.icon.name}_${ic.icon.color || "gray"}.svg`,
+    };
+  return null;
 }
 
 /* ---------- Blocchi Notion -> formato del frontend ---------- */
@@ -274,15 +345,14 @@ async function cached(key, fn) {
 }
 
 /* ---------- Logica API ---------- */
-async function listNotes() {
-  const ds = await getDataSourceId();
+async function listSource(ds, label, enrich) {
   const results = [];
   let cursor;
   do {
     const r = await notion(`/data_sources/${ds}/query`, {
       method: "POST",
       body: {
-        // Il filtro sta QUI, lato server: le note non pubbliche non lasciano mai Notion
+        // Il filtro sta QUI, lato server: le pagine non pubbliche non lasciano mai Notion
         filter: { property: PROP.pubblica, checkbox: { equals: true } },
         sorts: [{ timestamp: "created_time", direction: "descending" }],
         page_size: 100,
@@ -295,49 +365,98 @@ async function listNotes() {
   // Diagnostica: scrive nel log i nomi e i tipi delle colonne trovate (utile se qualcosa risulta vuoto)
   if (results[0])
     console.log(
-      "Colonne trovate:",
+      `Colonne trovate (${label}):`,
       Object.entries(results[0].properties)
         .map(([k, v]) => `"${k}" (${v.type})`)
         .join(", "),
     );
-  return results
-    .filter((p) => p.object === "page" && !p.in_trash)
-    .map(mapPage)
-    .filter((n) => n.pubblica);
+  const pages = results.filter((p) => p.object === "page" && !p.in_trash);
+  const mapped = await Promise.all(
+    pages.map(async (p) => (enrich ? enrich(p, mapPage(p)) : mapPage(p))),
+  );
+  return mapped.filter((n) => n.pubblica);
 }
 
-async function noteBlocks(id) {
-  // Sicurezza: prima di restituire il contenuto verifica che la pagina sia
-  // davvero del tuo database e abbia Pubblica = true. Senza questo controllo
-  // chiunque potrebbe leggere qualsiasi pagina condivisa con l'integrazione.
+/* Nella fonte "voti" la materia è una RELAZIONE verso la pagina del corso: si legge il titolo della pagina collegata
+   e si prende il colore dal corso omonimo degli appunti (così le correzioni hanno lo stesso colore della materia). */
+const relTitle = async (id) => {
+  try {
+    const pg = await cached(`rel:${id}`, () => notion(`/pages/${id}`));
+    const k = Object.keys(pg.properties || {}).find(
+      (x) => pg.properties[x].type === "title",
+    );
+    return plain(pg.properties[k]?.title) || "";
+  } catch {
+    return "";
+  }
+};
+async function enrichVoti(page, n, colors) {
+  const props = page.properties;
+  const rel =
+    prop(props, "Materia") ||
+    Object.values(props).find((v) => v.type === "relation");
+  let name = "";
+  if (rel?.relation?.[0]?.id) name = await relTitle(rel.relation[0].id);
+  else if (rel?.select) name = rel.select.name;
+  const key = name.trim().toLowerCase();
+  n.corso = name ? { name, color: colors.get(key) || "default" } : [];
+  return n;
+}
+
+async function listNotes() {
+  const { notes } = await getSources();
+  return listSource(notes, "appunti");
+}
+
+async function listCorrections() {
+  const { voti } = await getSources();
+  if (!voti) return [];
+  try {
+    const colors = new Map();
+    for (const n of await cached("list", listNotes)) {
+      const c = Array.isArray(n.corso) ? n.corso[0] : n.corso;
+      if (c?.name) colors.set(c.name.trim().toLowerCase(), c.color);
+    }
+    return await listSource(voti, "voti", (p, n) => enrichVoti(p, n, colors));
+  } catch (e) {
+    // Per esempio la fonte non ha la colonna "Pubblica": per sicurezza non si mostra nulla
+    console.error(
+      "Fonte voti non leggibile (nessuna correzione mostrata):",
+      e.message,
+    );
+    return [];
+  }
+}
+
+/* Restituisce la pagina solo se è PUBBLICA e viene da una delle fonti consentite (appunti o voti).
+   Senza questo controllo chiunque potrebbe leggere qualsiasi pagina condivisa con l'integrazione. */
+async function publishedPage(id) {
   const page = await notion(`/pages/${id}`);
-  const parentDb = clean(page.parent?.database_id);
+  const s = await getSources();
+  const par = page.parent || {};
+  const parentOk = par.data_source_id
+    ? s.sources.has(clean(par.data_source_id))
+    : s.dbs.has(clean(par.database_id));
   const ok =
     page.properties?.[PROP.pubblica]?.checkbox === true &&
     !page.in_trash &&
-    parentDb === clean(NOTION_DATABASE_ID);
+    parentOk;
   if (!ok) {
     const e = new Error("Not found");
     e.status = 404;
     throw e;
   }
-  // Il controllo qui sopra avviene SEMPRE (1 chiamata leggera): se togli "Pubblica" la nota sparisce subito.
+  return page;
+}
+
+async function noteBlocks(id) {
+  const page = await publishedPage(id); // controllo Pubblica a OGNI richiesta: tolta la spunta, la nota sparisce subito
   // Si mette in cache solo il contenuto, e solo finché la pagina non viene modificata.
   return cached(`b:${id}:${page.last_edited_time}`, () => fetchBlocks(id));
 }
 
-/* Scarica un'immagine di Notion e la gira al browser:
-   il link è sempre fresco e "Pubblica" viene ricontrollato a ogni richiesta. */
-async function noteImage(pageId, blockId, name, res) {
-  const fileName = (name || "immagine").replace(/[^\w.\-]/g, "_").slice(0, 100);
-  await noteBlocks(pageId); // verifica Pubblica e riempie l'indice delle immagini
-  if (!imageIndex.get(clean(pageId))?.has(clean(blockId))) {
-    const e = new Error("Not found");
-    e.status = 404;
-    throw e;
-  }
-  const b = await notion(`/blocks/${blockId}`);
-  const src = b.image?.file?.url || b.image?.external?.url;
+/* Scarica un file immagine (con link a scadenza di Notion) e lo gira al browser */
+async function pipeImage(src, fileName, res) {
   const up = src ? await fetch(src) : null;
   const type = up?.headers.get("content-type") || "";
   if (!up?.ok || !type.startsWith("image/")) {
@@ -354,6 +473,31 @@ async function noteImage(pageId, blockId, name, res) {
     "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
   });
   Readable.fromWeb(up.body).pipe(res);
+}
+
+/* Immagine di un appunto: il link è sempre fresco e "Pubblica" viene ricontrollato a ogni richiesta. */
+async function noteImage(pageId, blockId, name, res) {
+  const fileName = (name || "immagine").replace(/[^\w.\-]/g, "_").slice(0, 100);
+  await noteBlocks(pageId); // verifica Pubblica e riempie l'indice delle immagini
+  if (!imageIndex.get(clean(pageId))?.has(clean(blockId))) {
+    const e = new Error("Not found");
+    e.status = 404;
+    throw e;
+  }
+  const b = await notion(`/blocks/${blockId}`);
+  await pipeImage(b.image?.file?.url || b.image?.external?.url, fileName, res);
+}
+
+/* Icona della pagina, se caricata come file su Notion (la favicon della nota) */
+async function noteIcon(pageId, res) {
+  const page = await publishedPage(pageId);
+  const ic = page.icon;
+  if (ic?.type !== "file" || !ic.file?.url) {
+    const e = new Error("Not found");
+    e.status = 404;
+    throw e;
+  }
+  await pipeImage(ic.file.url, "icona", res);
 }
 
 /* ---------- Server HTTP ---------- */
@@ -376,6 +520,14 @@ http
 
       if (url.pathname === "/api/notes")
         return send(res, 200, await cached("list", listNotes));
+
+      if (url.pathname === "/api/corrections")
+        return send(res, 200, await cached("corrections", listCorrections));
+
+      const ic = url.pathname.match(
+        /^\/api\/notes\/([0-9a-f-]{32,36})\/icon$/i,
+      );
+      if (ic) return await noteIcon(ic[1], res);
 
       const im = url.pathname.match(
         /^\/api\/notes\/([0-9a-f-]{32,36})\/img\/([0-9a-f-]{32,36})(?:\/([^/]*))?$/i,

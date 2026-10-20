@@ -403,3 +403,184 @@ mark.hl {
   color: #f1f5f9;
   font-weight: 600;
 }
+
+/* ---------- Stampa: "Scarica" salva la nota in PDF (carta chiara, solo la nota) ---------- */
+@page {
+  size: A4;
+  margin: 16mm 15mm;
+}
+@media print {
+  html,
+  body.printing {
+    height: auto !important;
+    overflow: visible !important;
+    background: #fff !important;
+    color: #0f172a !important;
+  }
+  body.printing::before {
+    display: none !important;
+  }
+  /* i colori di sfondo (intestazione tabelle, badge, riquadri) vanno stampati */
+  body.printing,
+  body.printing * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  /* niente app: solo la nota */
+  body.printing > div:not(#modal) {
+    display: none !important;
+  }
+  body.printing #modal {
+    position: static !important;
+    inset: auto !important;
+    display: block !important;
+  }
+  body.printing #backdrop,
+  body.printing #close,
+  body.printing #dl,
+  body.printing #toc {
+    display: none !important;
+  }
+  body.printing #modalScroll {
+    position: static !important;
+    inset: auto !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+  body.printing #modalScroll > div {
+    display: block !important;
+    padding: 0 !important;
+    min-height: 0 !important;
+  }
+  body.printing #sheet {
+    max-width: none !important;
+    width: 100% !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    background: #fff !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    overflow: visible !important;
+    animation: none !important;
+  }
+  body.printing #sheetHead {
+    padding: 0.5rem 0 1rem !important;
+    border-bottom: 1px solid #cbd5e1 !important;
+  }
+  body.printing #sheetHead,
+  body.printing #sheetHead div {
+    color: #475569 !important;
+  }
+  body.printing #sheetHead h2 {
+    color: #0f172a !important;
+    padding-right: 0 !important;
+  }
+  body.printing .pr-badge {
+    color: #334155 !important;
+    background: #f1f5f9 !important;
+    box-shadow: inset 0 0 0 1px #cbd5e1 !important;
+  }
+  body.printing #sheetBody {
+    width: 100% !important;
+    padding: 1rem 0 0 !important;
+    font-size: 11pt !important;
+  }
+
+  /* contenuto: colori da carta chiara */
+  body.printing .nt p,
+  body.printing .nt li,
+  body.printing .nt .todo,
+  body.printing .nt .callout,
+  body.printing .nt td {
+    color: #1f2937 !important;
+  }
+  body.printing .nt h1,
+  body.printing .nt h2,
+  body.printing .nt h3,
+  body.printing .nt strong,
+  body.printing .nt th {
+    color: #0f172a !important;
+  }
+  body.printing .nt a {
+    color: #4338ca !important;
+  }
+  body.printing .nt blockquote {
+    color: #475569 !important;
+  }
+  body.printing .nt code.inline {
+    background: #f1f5f9 !important;
+    border-color: #e2e8f0 !important;
+    color: #be123c !important;
+  }
+  body.printing .nt pre {
+    background: #f8fafc !important;
+    border-color: #e2e8f0 !important;
+    color: #1e293b !important;
+    overflow: visible !important;
+    white-space: pre-wrap !important;
+    word-break: break-word !important;
+  }
+  body.printing .nt .callout {
+    background: #eef2ff !important;
+    border-color: #c7d2fe !important;
+  }
+  body.printing .nt hr {
+    background: #e2e8f0 !important;
+  }
+  body.printing .nt .todo .box {
+    border-color: #94a3b8 !important;
+  }
+  body.printing .nt .todo.done span.t {
+    color: #64748b !important;
+  }
+  body.printing .nt figure img {
+    border-color: #e2e8f0 !important;
+    background: #fff !important;
+    max-height: 240mm;
+    width: auto;
+    object-fit: contain;
+  }
+  body.printing .nt figcaption {
+    color: #64748b !important;
+  }
+  /* formule e tabelle */
+  body.printing .nt .katex {
+    color: #0f172a !important;
+  }
+  body.printing .nt .eq-block {
+    background: #f8fafc !important;
+    border-color: #e2e8f0 !important;
+    color: #0f172a !important;
+    overflow: visible !important;
+  }
+  body.printing .nt .katex-error {
+    color: #be123c !important;
+  }
+  body.printing .nt .tbl-wrap {
+    background: transparent !important;
+    border-color: #cbd5e1 !important;
+    overflow: visible !important;
+  }
+  body.printing .nt .nt-table th,
+  body.printing .nt .nt-table td {
+    border-color: #cbd5e1 !important;
+  }
+  body.printing .nt .nt-table th {
+    background: color-mix(in srgb, var(--c) 14%, #fff) !important;
+  }
+
+  /* niente spezzature brutte */
+  body.printing .nt h1,
+  body.printing .nt h2,
+  body.printing .nt h3 {
+    break-after: avoid;
+  }
+  body.printing .nt figure,
+  body.printing .nt pre,
+  body.printing .nt .eq-block,
+  body.printing .nt .callout,
+  body.printing .nt .nt-table tr {
+    break-inside: avoid;
+  }
+}

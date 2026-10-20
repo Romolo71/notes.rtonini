@@ -16,6 +16,9 @@
      -> [ blocchi Notion (heading_1/2/3, paragraph, bulleted_list_item,
           numbered_list_item, to_do, quote, callout, code, divider, image, equation, table) ]
 
+   GET  {API_BASE}/api/corrections        (correzioni dalla fonte "voti", stesso formato di /api/notes)
+   Ogni nota può avere icon: { type: "emoji", emoji } | { type: "url", url } (la favicon della nota).
+
    Il backend dovrebbe già filtrare Pubblica = true; il client lo
    ri-verifica comunque in modo rigido.
    ===================================================================== */
@@ -77,6 +80,7 @@ const MOCK_NOTES = [
     corso: { name: "Analisi Matematica I", color: "blue" },
     autore: "Giulia Rossi",
     dataCreazione: "2026-10-08T10:12:00Z",
+    icon: { type: "emoji", emoji: "📐" },
     url: "https://notion.so/",
     blocks: [
       P(
@@ -426,8 +430,59 @@ const MOCK_NOTES = [
   },
 ];
 
+/* Correzioni di esempio (in produzione arrivano da /api/corrections, fonte "voti") */
+const MOCK_CORRECTIONS = [
+  {
+    id: "c1",
+    titolo: "Correzione verifica: limiti e derivate",
+    pubblica: true,
+    corso: { name: "Analisi Matematica I", color: "blue" },
+    autore: "Giulia Rossi",
+    dataCreazione: "2026-10-14T09:00:00Z",
+    icon: { type: "emoji", emoji: "✅" },
+    blocks: [
+      H(2, "Esercizio 1"),
+      P(
+        T("Si applica il limite notevole "),
+        T("sin(x)/x → 1", { code: true }),
+        T("."),
+      ),
+      H(2, "Esercizio 2"),
+      LI(T("Derivata del prodotto")),
+      LI(T("Studio del segno")),
+    ],
+  },
+  {
+    id: "c2",
+    titolo: "Correzione verifica: derivate e studio di funzione",
+    pubblica: true,
+    corso: { name: "Analisi Matematica I", color: "blue" },
+    autore: "Giulia Rossi",
+    dataCreazione: "2026-10-18T09:00:00Z",
+    blocks: [
+      P(T("Svolgimento completo dell'esercizio sullo studio di funzione.")),
+    ],
+  },
+  {
+    id: "c3",
+    titolo: "Correzione verifica: normalizzazione",
+    pubblica: true,
+    corso: { name: "Basi di Dati", color: "green" },
+    autore: "Marco Bianchi",
+    dataCreazione: "2026-10-16T09:00:00Z",
+    blocks: [
+      P(
+        T(
+          "Decomposizione in 3NF e verifica della conservazione delle dipendenze.",
+        ),
+      ),
+    ],
+  },
+];
+
 /* ---------- Stato ---------- */
 const state = {
+  corrections: [],
   notes: [],
   course: "ALL",
   query: "",
@@ -515,7 +570,7 @@ const colA = (name, a) => {
 };
 
 const badge = (name) =>
-  `<span class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold tracking-wide" style="color:${col(name, 74)};background:${colA(name, 0.12)};box-shadow:inset 0 0 0 1px ${colA(name, 0.25)}"><i class="h-1.5 w-1.5 rounded-full" style="background:${col(name, 65)}"></i>${esc(name)}</span>`;
+  `<span class="pr-badge inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold tracking-wide" style="color:${col(name, 74)};background:${colA(name, 0.12)};box-shadow:inset 0 0 0 1px ${colA(name, 0.25)}"><i class="h-1.5 w-1.5 rounded-full" style="background:${col(name, 65)}"></i>${esc(name)}</span>`;
 
 const highlight = (text, q) => {
   const safe = esc(text);
@@ -570,6 +625,7 @@ function normalize(r) {
     data: r.dataCreazione ?? r.created_time ?? r.data,
     url: r.url || "",
     blocks: r.blocks || null,
+    icon: r.icon || null,
   };
 }
 
@@ -602,6 +658,25 @@ async function loadNotes() {
     .filter((n) => n.pubblica === true)
     .sort((a, b) => new Date(b.data) - new Date(a.data));
   state.loading = false;
+  render();
+  loadCorrections(); // non blocca gli appunti: se la fonte "voti" non risponde, semplicemente non compare la sezione
+}
+
+async function loadCorrections() {
+  let raw = [];
+  try {
+    if (!API_BASE) raw = MOCK_CORRECTIONS;
+    else {
+      const res = await fetch(`${API_BASE}/api/corrections`, {
+        headers: { Accept: "application/json" },
+      });
+      if (res.ok) raw = await res.json();
+    }
+  } catch {}
+  state.corrections = raw
+    .map(normalize)
+    .filter((n) => n.pubblica === true)
+    .sort((a, b) => new Date(b.data) - new Date(a.data));
   render();
 }
 
@@ -641,6 +716,20 @@ function visible() {
     return q.every((w) => hay.includes(w));
   });
 }
+
+/* Correzioni (fonte "voti") del corso selezionato: compaiono SOLO nelle pagine delle singole materie */
+function correctionsFor(course) {
+  if (course === "ALL") return [];
+  const q = norm(state.query).split(/\s+/).filter(Boolean);
+  return state.corrections.filter(
+    (n) =>
+      n.corsi.some((c) => norm(c) === norm(course)) &&
+      q.every((w) => norm(n.titolo).includes(w)),
+  );
+}
+const findNote = (id) =>
+  state.notes.find((x) => x.id === id) ||
+  state.corrections.find((x) => x.id === id);
 
 /* Colore del corso -> variabile CSS --c (evidenziazione, barra di scorrimento, indice) */
 function applyTheme(target, course) {
@@ -739,6 +828,14 @@ function renderNav() {
   $("#nav").innerHTML = html;
 }
 
+function jumpHTML() {
+  if (state.loading || state.course === "ALL") return "";
+  const n = correctionsFor(state.course).length;
+  if (!n) return "";
+  const c = state.course;
+  return `<button id="jumpCorr" type="button" class="mt-4 inline-flex items-center gap-2 rounded-full px-3.5 py-1.5 text-xs font-semibold transition hover:brightness-125" style="color:${col(c, 74)};background:${colA(c, 0.12)};box-shadow:inset 0 0 0 1px ${colA(c, 0.25)}">Vai alle correzioni <span class="tabular-nums opacity-70">${n}</span><span aria-hidden="true">↓</span></button>`;
+}
+
 function courseInfoHTML() {
   if (state.course === "ALL") return "";
   const key = Object.keys(COURSE_INFO).find(
@@ -778,6 +875,7 @@ function renderHead(list) {
     <div class="min-w-0">
       <h2 class="text-3xl sm:text-4xl font-bold tracking-tight text-white">${accent}${esc(title)}</h2>
       <p class="mt-2 text-sm text-slate-400">${count}</p>
+      ${jumpHTML()}
     </div>
     ${courseInfoHTML()}
   </div>`;
@@ -844,6 +942,30 @@ const emptyState = (
   <p class="font-semibold text-slate-200">${t}</p><p class="mt-1 text-sm text-slate-500">${s}</p>
   ${retry ? '<button id="retry" class="mt-5 rounded-lg bg-indigo-500 hover:bg-indigo-400 px-4 py-2 text-sm font-semibold text-white">Riprova</button>' : ""}</div>`;
 
+/* Sezione "Correzioni" sotto gli appunti della materia (creata una volta sola, subito dopo la griglia) */
+const corrEl = document.createElement("section");
+corrEl.id = "correzioni";
+$("#grid").after(corrEl);
+
+function renderCorrections() {
+  const list = state.loading ? [] : correctionsFor(state.course);
+  if (!list.length) {
+    corrEl.innerHTML = "";
+    corrEl.className = "";
+    return;
+  }
+  const c = state.course;
+  corrEl.className = "mt-14";
+  corrEl.style.scrollMarginTop = "1.5rem";
+  corrEl.innerHTML = `<div class="flex items-center gap-3 mb-5">
+      <span class="h-2.5 w-2.5 rounded-full" style="background:${col(c, 62)};box-shadow:0 0 12px ${colA(c, 0.5)}"></span>
+      <h2 class="text-xl font-bold tracking-tight text-white">Correzioni</h2>
+      <span class="text-xs tabular-nums rounded-md bg-white/10 px-1.5 py-0.5 text-slate-300">${list.length}</span>
+      <span class="h-px flex-1 bg-white/[0.08]"></span>
+    </div>
+    <div class="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">${list.map(cardHTML).join("")}</div>`;
+}
+
 function renderSync() {
   const map = {
     live: [
@@ -867,6 +989,7 @@ function render() {
   renderNav();
   renderHead(list);
   renderGrid(list);
+  renderCorrections();
   renderSync();
 }
 
@@ -983,12 +1106,126 @@ function blocksHTML(blocks) {
   return out;
 }
 
+/* ---------- Favicon della nota (come Notion: l'icona della pagina; se manca resta quella della home) ---------- */
+const homeIcons = [...document.querySelectorAll('link[rel~="icon"]')].map((l) =>
+  l.cloneNode(),
+);
+let faviconToken = 0;
+function setFavicon(href) {
+  document.querySelectorAll('link[rel~="icon"]').forEach((l) => l.remove());
+  const l = document.createElement("link");
+  l.rel = "icon";
+  l.href = href;
+  document.head.appendChild(l);
+}
+function resetFavicon() {
+  faviconToken++;
+  document.querySelectorAll('link[rel~="icon"]').forEach((l) => l.remove());
+  homeIcons.forEach((l) => document.head.appendChild(l.cloneNode()));
+}
+function emojiFavicon(emoji) {
+  try {
+    const c = document.createElement("canvas");
+    c.width = c.height = 64;
+    const x = c.getContext("2d");
+    x.font =
+      '52px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif';
+    x.textAlign = "center";
+    x.textBaseline = "middle";
+    x.fillText(emoji, 32, 36);
+    return c.toDataURL("image/png");
+  } catch {
+    return null;
+  }
+}
+function applyNoteFavicon(note) {
+  const mine = ++faviconToken;
+  const ic = note.icon;
+  if (!ic) return; // nessuna icona su Notion: resta la favicon della home
+  if (ic.type === "emoji") {
+    const url = emojiFavicon(ic.emoji);
+    if (url) setFavicon(url);
+    return;
+  }
+  if (ic.type === "url" && /^(https?:\/\/|\/(?!\/))/.test(ic.url || "")) {
+    const src = ic.url.startsWith("/") ? API_BASE + ic.url : ic.url;
+    const img = new Image();
+    // Si cambia la favicon solo se l'immagine si carica davvero (e la nota è ancora aperta)
+    img.onload = () => {
+      if (mine === faviconToken) setFavicon(src);
+    };
+    img.src = src;
+  }
+}
+
+/* ---------- Scarica in PDF ----------
+   Usa la stampa del browser ("Salva come PDF"): il PDF è vettoriale (testo selezionabile, formule nitide)
+   e il browser fa scegliere dove salvarlo. Il nome proposto è il titolo della pagina: "Autore - Titolo". */
+let titleBeforePrint = null;
+function pdfName(n) {
+  const clean = (s) =>
+    String(s)
+      .replace(/[\\/:*?"<>|\u0000-\u001f]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  const autore = n.autore && n.autore !== "Anonimo" ? clean(n.autore) : "";
+  const nome = autore ? `${autore} - ${clean(n.titolo)}` : clean(n.titolo);
+  return nome.slice(0, 150) || "Appunto";
+}
+function preparePrint() {
+  if (!currentNote || document.body.classList.contains("printing")) return;
+  titleBeforePrint = document.title;
+  document.title = pdfName(currentNote);
+  document.body.classList.add("printing");
+}
+function cleanupPrint() {
+  document.body.classList.remove("printing");
+  if (titleBeforePrint !== null) {
+    document.title = titleBeforePrint;
+    titleBeforePrint = null;
+  }
+}
+async function downloadNote() {
+  if (!currentNote) return;
+  // Le immagini "lazy" sotto la piega non sono ancora caricate: le forziamo, altrimenti nel PDF resterebbero vuote
+  const imgs = [...document.querySelectorAll("#sheetBody img")];
+  imgs.forEach((i) => {
+    i.loading = "eager";
+  });
+  await Promise.race([
+    Promise.all(
+      imgs.map((i) =>
+        i.complete
+          ? 0
+          : new Promise((r) => {
+              i.onload = i.onerror = r;
+            }),
+      ),
+    ),
+    new Promise((r) => setTimeout(r, 8000)),
+  ]);
+  try {
+    await document.fonts?.ready; // font delle formule
+  } catch {}
+  preparePrint();
+  window.print();
+}
+window.addEventListener("beforeprint", preparePrint); // vale anche per Ctrl+P con una nota aperta
+window.addEventListener("afterprint", cleanupPrint);
+$("#sheetHead").addEventListener("click", (e) => {
+  if (e.target.closest("#dl:not([disabled])")) downloadNote();
+});
+
 /* ---------- Modal ---------- */
 let lastFocus = null;
+let currentNote = null;
 async function openNote(id) {
-  const n = state.notes.find((x) => x.id === id);
+  const n = findNote(id);
   if (!n) return;
   lastFocus = document.activeElement;
+  currentNote = n;
+  resetFavicon();
+  applyNoteFavicon(n);
   const primary = n.corsi[0];
   applyTheme($("#modal"), primary);
   tocObserver?.disconnect();
@@ -1002,7 +1239,7 @@ async function openNote(id) {
     <div class="mt-5 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-slate-400">
       <span class="inline-flex items-center gap-2"><span class="h-6 w-6 grid place-items-center rounded-full text-[10px] font-bold text-white" style="background:linear-gradient(135deg,${col(primary, 55)},${col(primary, 40)})">${esc(initials(n.autore))}</span>${esc(n.autore)}</span>
       <span class="inline-flex items-center gap-1.5"><svg class="h-4 w-4 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3M4 11h16M5 5h14a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1Z"/></svg>${fmtDateLong(n.data)}</span>
-      ${n.url ? `<a href="${esc(n.url)}" target="_blank" rel="noopener noreferrer" class="ml-auto text-xs font-semibold text-indigo-300 hover:text-indigo-200">Apri in Notion ↗</a>` : ""}
+      <button id="dl" type="button" disabled title="Salva la nota come PDF" class="ml-auto inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition hover:brightness-125 disabled:opacity-40 disabled:cursor-wait" style="color:${col(primary, 74)};background:${colA(primary, 0.12)};box-shadow:inset 0 0 0 1px ${colA(primary, 0.25)}"><svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v11m0 0 4-4m-4 4-4-4M5 19h14"/></svg>Scarica</button>
     </div>`;
   $("#sheetBody").innerHTML =
     '<div class="space-y-3"><div class="skeleton h-4 w-3/4 rounded"></div><div class="skeleton h-4 w-full rounded"></div><div class="skeleton h-4 w-5/6 rounded"></div></div>';
@@ -1011,13 +1248,17 @@ async function openNote(id) {
   $("#modalScroll").scrollTop = 0;
   $("#close").focus({ preventScroll: true });
   const blocks = await loadBlocks(n);
-  if (!$("#modal").classList.contains("hidden")) {
+  // currentNote === n: se nel frattempo hai chiuso o aperto un'altra nota, non sovrascrive quella nuova
+  if (currentNote === n && !$("#modal").classList.contains("hidden")) {
     $("#sheetBody").innerHTML =
       blocksHTML(blocks) || "<p>Questa nota è vuota.</p>";
     buildToc();
+    $("#dl")?.removeAttribute("disabled");
   }
 }
 function closeNote() {
+  currentNote = null;
+  resetFavicon();
   $("#modal").classList.add("hidden");
   document.body.style.overflow = "";
   lastFocus?.focus?.({ preventScroll: true });
@@ -1055,6 +1296,22 @@ $("#grid").addEventListener("pointermove", (e) => {
   const r = c.getBoundingClientRect();
   c.style.setProperty("--mx", e.clientX - r.left + "px");
   c.style.setProperty("--my", e.clientY - r.top + "px");
+});
+
+corrEl.addEventListener("click", (e) => {
+  const c = e.target.closest("[data-id]");
+  if (c) openNote(c.dataset.id);
+});
+corrEl.addEventListener("pointermove", (e) => {
+  const c = e.target.closest(".card");
+  if (!c) return;
+  const r = c.getBoundingClientRect();
+  c.style.setProperty("--mx", e.clientX - r.left + "px");
+  c.style.setProperty("--my", e.clientY - r.top + "px");
+});
+$("#head").addEventListener("click", (e) => {
+  if (e.target.closest("#jumpCorr"))
+    corrEl.scrollIntoView({ behavior: "smooth", block: "start" });
 });
 
 const search = $("#search");

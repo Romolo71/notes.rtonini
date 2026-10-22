@@ -187,7 +187,7 @@ function mapPage(page) {
 }
 
 /* Icona della pagina, come la mostra Notion: emoji, immagine caricata, link esterno o icona nativa */
-function mapIcon(page) {
+function mapIcon(page, route = "/api/notes/") {
   const ic = page.icon;
   if (!ic) return null;
   if (ic.type === "emoji") return { type: "emoji", emoji: ic.emoji };
@@ -197,7 +197,7 @@ function mapIcon(page) {
     return { type: "url", url: ic.custom_emoji.url };
   // Le immagini caricate su Notion hanno un link che scade dopo ~1 ora: le serviamo noi da /api/notes/:id/icon
   if (ic.type === "file")
-    return { type: "url", url: `/api/notes/${page.id}/icon` };
+    return { type: "url", url: `${route}${page.id}/icon` };
   // Icone native di Notion (nome + colore): indirizzo pubblico di Notion, il sito ripiega sulla favicon della home se non si carica
   if (ic.type === "icon" && ic.icon?.name)
     return {
@@ -500,6 +500,89 @@ async function noteIcon(pageId, res) {
   await pipeImage(ic.file.url, "icona", res);
 }
 
+/* Icone dei corsi (le pagine collegate dalla relazione "Materia" di Voti): servono per la favicon delle pagine materia.
+   Dalle righe di Voti si leggono SOLO gli ID delle pagine corso, mai voti o contenuti. */
+const courseIconIds = new Set();
+async function courseDataSource(voti) {
+  if (process.env.NOTION_CORSI_DATA_SOURCE_ID)
+    return clean(process.env.NOTION_CORSI_DATA_SOURCE_ID);
+  // la colonna "Materia" di Voti è una relazione: il suo schema dice qual è il database dei corsi
+  const sch = await notion(`/data_sources/${voti}`);
+  const props = sch.properties || {};
+  const rel =
+    prop(props, "Materia")?.type === "relation"
+      ? prop(props, "Materia")
+      : Object.values(props).find((v) => v.type === "relation");
+  return rel?.relation?.data_source_id || null;
+}
+async function listCourseIcons() {
+  const { voti } = await getSources();
+  const out = {};
+  try {
+    let pages = [];
+    const ds = voti ? await courseDataSource(voti).catch(() => null) : null;
+    if (ds) {
+      // TUTTI i corsi del database (anche quelli senza voti): servono solo nome e icona
+      let cursor;
+      do {
+        const r = await notion(`/data_sources/${ds}/query`, {
+          method: "POST",
+          body: { page_size: 100, ...(cursor && { start_cursor: cursor }) },
+        });
+        pages.push(...r.results);
+        cursor = r.has_more ? r.next_cursor : null;
+      } while (cursor);
+    } else if (voti) {
+      // ripiego: solo i corsi che compaiono nelle righe di Voti
+      const ids = new Set();
+      let cursor;
+      do {
+        const r = await notion(`/data_sources/${voti}/query`, {
+          method: "POST",
+          body: { page_size: 100, ...(cursor && { start_cursor: cursor }) },
+        });
+        for (const pg of r.results) {
+          const props = pg.properties || {};
+          const rel =
+            prop(props, "Materia") ||
+            Object.values(props).find((v) => v.type === "relation");
+          (rel?.relation || []).forEach((x) => ids.add(x.id));
+        }
+        cursor = r.has_more ? r.next_cursor : null;
+      } while (cursor);
+      for (const id of ids)
+        pages.push(await cached(`rel:${id}`, () => notion(`/pages/${id}`)));
+    }
+    for (const pg of pages) {
+      if (pg.object !== "page" || pg.in_trash) continue;
+      const k = Object.keys(pg.properties || {}).find(
+        (x) => pg.properties[x].type === "title",
+      );
+      const name = plain(pg.properties[k]?.title).trim().toLowerCase();
+      const icon = mapIcon(pg, "/api/course-icon/");
+      if (name && icon) {
+        out[name] = icon;
+        courseIconIds.add(clean(pg.id));
+      }
+    }
+  } catch (e) {
+    console.error("Icone dei corsi non leggibili:", e.message);
+  }
+  console.log(
+    "Icone dei corsi trovate:",
+    Object.keys(out).join(", ") || "nessuna",
+  );
+  return out;
+}
+async function courseIcon(pageId, res) {
+  await cached("courseicons", listCourseIcons);
+  const bad = () => Object.assign(new Error("Not found"), { status: 404 });
+  if (!courseIconIds.has(clean(pageId))) throw bad(); // solo pagine corso già individuate
+  const pg = await notion(`/pages/${pageId}`);
+  if (pg.icon?.type !== "file" || !pg.icon.file?.url) throw bad();
+  await pipeImage(pg.icon.file.url, "icona", res);
+}
+
 /* ---------- Server HTTP ---------- */
 const send = (res, code, body, type = "application/json") => {
   res.writeHead(code, {
@@ -520,6 +603,14 @@ http
 
       if (url.pathname === "/api/notes")
         return send(res, 200, await cached("list", listNotes));
+
+      if (url.pathname === "/api/course-icons")
+        return send(res, 200, await cached("courseicons", listCourseIcons));
+
+      const ci = url.pathname.match(
+        /^\/api\/course-icon\/([0-9a-f-]{32,36})\/icon$/i,
+      );
+      if (ci) return await courseIcon(ci[1], res);
 
       if (url.pathname === "/api/corrections")
         return send(res, 200, await cached("corrections", listCorrections));
@@ -558,5 +649,3 @@ http
   .listen(PORT, process.env.HOST || "127.0.0.1", () =>
     console.log(`Server pronto su http://127.0.0.1:${PORT}`),
   ); // solo locale: ci pensa Nginx a esporlo
-
-  

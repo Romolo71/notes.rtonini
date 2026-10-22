@@ -442,11 +442,7 @@ const MOCK_CORRECTIONS = [
     icon: { type: "emoji", emoji: "✅" },
     blocks: [
       H(2, "Esercizio 1"),
-      P(
-        T("Si applica il limite notevole "),
-        T("sin(x)/x → 1", { code: true }),
-        T("."),
-      ),
+      P(T("Si applica il limite notevole "), T("sin(x)/x → 1", { code: true }), T(".")),
       H(2, "Esercizio 2"),
       LI(T("Derivata del prodotto")),
       LI(T("Studio del segno")),
@@ -459,9 +455,7 @@ const MOCK_CORRECTIONS = [
     corso: { name: "Analisi Matematica I", color: "blue" },
     autore: "Giulia Rossi",
     dataCreazione: "2026-10-18T09:00:00Z",
-    blocks: [
-      P(T("Svolgimento completo dell'esercizio sullo studio di funzione.")),
-    ],
+    blocks: [P(T("Svolgimento completo dell'esercizio sullo studio di funzione."))],
   },
   {
     id: "c3",
@@ -470,15 +464,12 @@ const MOCK_CORRECTIONS = [
     corso: { name: "Basi di Dati", color: "green" },
     autore: "Marco Bianchi",
     dataCreazione: "2026-10-16T09:00:00Z",
-    blocks: [
-      P(
-        T(
-          "Decomposizione in 3NF e verifica della conservazione delle dipendenze.",
-        ),
-      ),
-    ],
+    blocks: [P(T("Decomposizione in 3NF e verifica della conservazione delle dipendenze."))],
   },
 ];
+
+/* Icone dei corsi di esempio (in produzione da /api/course-icons: pagine corso di Notion) */
+const MOCK_COURSE_ICONS = { "analisi matematica i": { type: "emoji", emoji: "📊" } };
 
 /* ---------- Stato ---------- */
 const state = {
@@ -486,6 +477,7 @@ const state = {
   notes: [],
   course: "ALL",
   query: "",
+  courseIcons: {},
   sort: "new", // ordine di visualizzazione (predefinito: più recenti prima)
   sortOpen: false,
   loading: true,
@@ -661,7 +653,21 @@ async function loadNotes() {
     .sort((a, b) => new Date(b.data) - new Date(a.data));
   state.loading = false;
   render();
+  loadCourseIcons();
   loadCorrections(); // non blocca gli appunti: se la fonte "voti" non risponde, semplicemente non compare la sezione
+}
+
+async function loadCourseIcons() {
+  let raw = {};
+  try {
+    if (!API_BASE) raw = MOCK_COURSE_ICONS;
+    else {
+      const res = await fetch(`${API_BASE}/api/course-icons`, { headers: { Accept: "application/json" } });
+      if (res.ok) raw = await res.json();
+    }
+  } catch {}
+  state.courseIcons = Object.fromEntries(Object.entries(raw).map(([k, v]) => [norm(k), v]));
+  render();
 }
 
 async function loadCorrections() {
@@ -711,23 +717,14 @@ function courseList() {
 }
 /* Ordinamenti disponibili: quello attivo non compare nel menu */
 const SORTS = {
-  new: {
-    short: "Più recenti",
-    label: "Per data di creazione (più recente - meno recente)",
-  },
-  old: {
-    short: "Meno recenti",
-    label: "Per data di creazione (meno recente - più recente)",
-  },
+  new: { short: "Più recenti", label: "Per data di creazione (più recente - meno recente)" },
+  old: { short: "Meno recenti", label: "Per data di creazione (meno recente - più recente)" },
   az: { short: "Nome A-Z", label: "Per nome (A-Z)" },
   za: { short: "Nome Z-A", label: "Per nome (Z-A)" },
 };
 function sorted(list) {
   const byName = (a, b) =>
-    a.titolo.localeCompare(b.titolo, "it", {
-      numeric: true,
-      sensitivity: "base",
-    });
+    a.titolo.localeCompare(b.titolo, "it", { numeric: true, sensitivity: "base" });
   const d = (n) => new Date(n.data).getTime() || 0;
   const f = {
     new: (a, b) => d(b) - d(a),
@@ -1033,6 +1030,12 @@ function renderSync() {
 
 function render() {
   applyTheme(document.documentElement, state.course);
+  const fk = state.course + "|" + Object.keys(state.courseIcons).length;
+  if (!currentNote && fk !== favKey) {
+    favKey = fk;
+    resetFavicon();
+    applyCourseFavicon();
+  }
   const list = visible();
   renderNav();
   renderHead(list);
@@ -1186,10 +1189,19 @@ function emojiFavicon(emoji) {
     return null;
   }
 }
+/* Favicon della materia aperta (icona della pagina corso su Notion); senza icona resta quella della home */
+function applyCourseFavicon() {
+  if (currentNote || state.course === "ALL") return;
+  const ic = state.courseIcons[norm(state.course)];
+  if (ic) applyIcon(ic);
+}
+let favKey = null;
 function applyNoteFavicon(note) {
+  applyIcon(note.icon || state.courseIcons[norm(state.course)]); // nota senza icona: usa quella della materia, altrimenti la home
+}
+function applyIcon(ic) {
   const mine = ++faviconToken;
-  const ic = note.icon;
-  if (!ic) return; // nessuna icona su Notion: resta la favicon della home
+  if (!ic) return;
   if (ic.type === "emoji") {
     const url = emojiFavicon(ic.emoji);
     if (url) setFavicon(url);
@@ -1307,6 +1319,7 @@ async function openNote(id) {
 function closeNote() {
   currentNote = null;
   resetFavicon();
+  applyCourseFavicon();
   $("#modal").classList.add("hidden");
   document.body.style.overflow = "";
   lastFocus?.focus?.({ preventScroll: true });

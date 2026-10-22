@@ -442,7 +442,11 @@ const MOCK_CORRECTIONS = [
     icon: { type: "emoji", emoji: "✅" },
     blocks: [
       H(2, "Esercizio 1"),
-      P(T("Si applica il limite notevole "), T("sin(x)/x → 1", { code: true }), T(".")),
+      P(
+        T("Si applica il limite notevole "),
+        T("sin(x)/x → 1", { code: true }),
+        T("."),
+      ),
       H(2, "Esercizio 2"),
       LI(T("Derivata del prodotto")),
       LI(T("Studio del segno")),
@@ -455,7 +459,9 @@ const MOCK_CORRECTIONS = [
     corso: { name: "Analisi Matematica I", color: "blue" },
     autore: "Giulia Rossi",
     dataCreazione: "2026-10-18T09:00:00Z",
-    blocks: [P(T("Svolgimento completo dell'esercizio sullo studio di funzione."))],
+    blocks: [
+      P(T("Svolgimento completo dell'esercizio sullo studio di funzione.")),
+    ],
   },
   {
     id: "c3",
@@ -464,12 +470,20 @@ const MOCK_CORRECTIONS = [
     corso: { name: "Basi di Dati", color: "green" },
     autore: "Marco Bianchi",
     dataCreazione: "2026-10-16T09:00:00Z",
-    blocks: [P(T("Decomposizione in 3NF e verifica della conservazione delle dipendenze."))],
+    blocks: [
+      P(
+        T(
+          "Decomposizione in 3NF e verifica della conservazione delle dipendenze.",
+        ),
+      ),
+    ],
   },
 ];
 
 /* Icone dei corsi di esempio (in produzione da /api/course-icons: pagine corso di Notion) */
-const MOCK_COURSE_ICONS = { "analisi matematica i": { type: "emoji", emoji: "📊" } };
+const MOCK_COURSE_ICONS = {
+  "analisi matematica i": { type: "emoji", emoji: "📊" },
+};
 
 /* ---------- Stato ---------- */
 const state = {
@@ -662,11 +676,15 @@ async function loadCourseIcons() {
   try {
     if (!API_BASE) raw = MOCK_COURSE_ICONS;
     else {
-      const res = await fetch(`${API_BASE}/api/course-icons`, { headers: { Accept: "application/json" } });
+      const res = await fetch(`${API_BASE}/api/course-icons`, {
+        headers: { Accept: "application/json" },
+      });
       if (res.ok) raw = await res.json();
     }
   } catch {}
-  state.courseIcons = Object.fromEntries(Object.entries(raw).map(([k, v]) => [norm(k), v]));
+  state.courseIcons = Object.fromEntries(
+    Object.entries(raw).map(([k, v]) => [norm(k), v]),
+  );
   render();
 }
 
@@ -717,14 +735,23 @@ function courseList() {
 }
 /* Ordinamenti disponibili: quello attivo non compare nel menu */
 const SORTS = {
-  new: { short: "Più recenti", label: "Per data di creazione (più recente - meno recente)" },
-  old: { short: "Meno recenti", label: "Per data di creazione (meno recente - più recente)" },
+  new: {
+    short: "Più recenti",
+    label: "Per data di creazione (più recente - meno recente)",
+  },
+  old: {
+    short: "Meno recenti",
+    label: "Per data di creazione (meno recente - più recente)",
+  },
   az: { short: "Nome A-Z", label: "Per nome (A-Z)" },
   za: { short: "Nome Z-A", label: "Per nome (Z-A)" },
 };
 function sorted(list) {
   const byName = (a, b) =>
-    a.titolo.localeCompare(b.titolo, "it", { numeric: true, sensitivity: "base" });
+    a.titolo.localeCompare(b.titolo, "it", {
+      numeric: true,
+      sensitivity: "base",
+    });
   const d = (n) => new Date(n.data).getTime() || 0;
   const f = {
     new: (a, b) => d(b) - d(a),
@@ -1028,8 +1055,18 @@ function renderSync() {
   $("#syncLabel").textContent = label;
 }
 
+/* Titolo della scheda: nelle pagine materia diventa "Appunti <materia> 5IB"; qui si possono accorciare i nomi lunghi */
+const homeTitle = document.title;
+const TITLE_SHORT = { "sistemi e reti": "Sistemi" };
+function courseTitle() {
+  if (state.course === "ALL") return homeTitle;
+  const k = norm(state.course);
+  return `Appunti ${TITLE_SHORT[k] || state.course} 5IB`;
+}
+
 function render() {
   applyTheme(document.documentElement, state.course);
+  if (titleBeforePrint === null) document.title = courseTitle(); // durante la stampa il titolo è il nome del PDF
   const fk = state.course + "|" + Object.keys(state.courseIcons).length;
   if (!currentNote && fk !== favKey) {
     favKey = fk;

@@ -486,6 +486,8 @@ const state = {
   notes: [],
   course: "ALL",
   query: "",
+  sort: "new", // ordine di visualizzazione (predefinito: più recenti prima)
+  sortOpen: false,
   loading: true,
   source: "mock",
 };
@@ -707,9 +709,55 @@ function courseList() {
   );
   return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0], "it"));
 }
+/* Ordinamenti disponibili: quello attivo non compare nel menu */
+const SORTS = {
+  new: {
+    short: "Più recenti",
+    label: "Per data di creazione (più recente - meno recente)",
+  },
+  old: {
+    short: "Meno recenti",
+    label: "Per data di creazione (meno recente - più recente)",
+  },
+  az: { short: "Nome A-Z", label: "Per nome (A-Z)" },
+  za: { short: "Nome Z-A", label: "Per nome (Z-A)" },
+};
+function sorted(list) {
+  const byName = (a, b) =>
+    a.titolo.localeCompare(b.titolo, "it", {
+      numeric: true,
+      sensitivity: "base",
+    });
+  const d = (n) => new Date(n.data).getTime() || 0;
+  const f = {
+    new: (a, b) => d(b) - d(a),
+    old: (a, b) => d(a) - d(b),
+    az: byName,
+    za: (a, b) => byName(b, a),
+  }[state.sort];
+  return [...list].sort(f);
+}
+function sortHTML() {
+  if (state.loading) return "";
+  const items = Object.entries(SORTS)
+    .filter(([k]) => k !== state.sort)
+    .map(
+      ([k, v]) =>
+        `<button type="button" role="menuitem" data-sort="${k}" class="block w-full text-left px-3.5 py-2 text-[13px] text-slate-200 hover:bg-white/10 transition">${v.label}</button>`,
+    )
+    .join("");
+  return `<div class="relative inline-block">
+    <button id="sortBtn" type="button" aria-haspopup="menu" aria-expanded="${state.sortOpen}" class="inline-flex items-center gap-2 rounded-full bg-white/[0.06] px-3.5 py-1.5 text-xs font-semibold text-slate-200 ring-1 ring-white/10 transition hover:bg-white/10">
+      <svg class="h-3.5 w-3.5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 7h13M3 12h9M3 17h5m8-1 3 3m0 0 3-3m-3 3V9"/></svg>
+      Ordina: ${SORTS[state.sort].short}
+    </button>
+    ${state.sortOpen ? `<div role="menu" class="absolute left-0 top-full z-30 mt-2 w-72 overflow-hidden rounded-xl border border-white/10 bg-ink-800 py-1 shadow-2xl shadow-black/50">${items}</div>` : ""}
+  </div>`;
+}
+
 function visible() {
   const q = norm(state.query).split(/\s+/).filter(Boolean);
-  return state.notes.filter((n) => {
+  return sorted(state.notes).filter((n) => {
     if (state.course !== "ALL" && !n.corsi.includes(state.course)) return false;
     if (!q.length) return true;
     const hay = norm(n.titolo + " " + n.corsi.join(" "));
@@ -721,7 +769,7 @@ function visible() {
 function correctionsFor(course) {
   if (course === "ALL") return [];
   const q = norm(state.query).split(/\s+/).filter(Boolean);
-  return state.corrections.filter(
+  return sorted(state.corrections).filter(
     (n) =>
       n.corsi.some((c) => norm(c) === norm(course)) &&
       q.every((w) => norm(n.titolo).includes(w)),
@@ -875,7 +923,7 @@ function renderHead(list) {
     <div class="min-w-0">
       <h2 class="text-3xl sm:text-4xl font-bold tracking-tight text-white">${accent}${esc(title)}</h2>
       <p class="mt-2 text-sm text-slate-400">${count}</p>
-      ${jumpHTML()}
+      <div class="mt-4 flex flex-wrap items-center gap-3">${sortHTML()}${jumpHTML().replace("mt-4 ", "")}</div>
     </div>
     ${courseInfoHTML()}
   </div>`;
@@ -1309,7 +1357,20 @@ corrEl.addEventListener("pointermove", (e) => {
   c.style.setProperty("--mx", e.clientX - r.left + "px");
   c.style.setProperty("--my", e.clientY - r.top + "px");
 });
+// l'intestazione sta sopra la griglia: il menu di ordinamento non deve finire sotto le card
+$("#head").style.cssText += ";position:relative;z-index:20";
 $("#head").addEventListener("click", (e) => {
+  const opt = e.target.closest("[data-sort]");
+  if (opt || e.target.closest("#sortBtn")) e.stopPropagation(); // il re-render stacca il bottone: non deve scattare la chiusura sul document
+  if (opt) {
+    state.sort = opt.dataset.sort;
+    state.sortOpen = false;
+    return render();
+  }
+  if (e.target.closest("#sortBtn")) {
+    state.sortOpen = !state.sortOpen;
+    return render();
+  }
   if (e.target.closest("#jumpCorr"))
     corrEl.scrollIntoView({ behavior: "smooth", block: "start" });
 });
@@ -1336,7 +1397,17 @@ $("#backdrop").onclick = closeNote;
 $("#modalScroll").addEventListener("click", (e) => {
   if (!e.target.closest("#sheet")) closeNote();
 });
+document.addEventListener("click", (e) => {
+  if (state.sortOpen && !e.target.closest("#head")) {
+    state.sortOpen = false;
+    render();
+  }
+});
 document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && state.sortOpen) {
+    state.sortOpen = false;
+    render();
+  }
   if (e.key === "Escape") {
     if (!$("#modal").classList.contains("hidden")) closeNote();
     else toggleSidebar(false);

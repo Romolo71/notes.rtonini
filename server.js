@@ -520,18 +520,31 @@ async function listCourseIcons() {
   const out = {};
   try {
     let pages = [];
-    const ds = voti ? await courseDataSource(voti).catch(() => null) : null;
+    const ds = voti
+      ? await courseDataSource(voti).catch(
+          (e) => (
+            console.error("Schema di Voti non leggibile:", e.message),
+            null
+          ),
+        )
+      : null;
     if (ds) {
+      // L'ID può essere quello del database (quello che si vede nell'URL) o della sua fonte dati: si prova prima come database
+      const sources = await notion(`/databases/${ds}`)
+        .then((d) => (d.data_sources || []).map((x) => x.id))
+        .catch(() => [ds]);
       // TUTTI i corsi del database (anche quelli senza voti): servono solo nome e icona
-      let cursor;
-      do {
-        const r = await notion(`/data_sources/${ds}/query`, {
-          method: "POST",
-          body: { page_size: 100, ...(cursor && { start_cursor: cursor }) },
-        });
-        pages.push(...r.results);
-        cursor = r.has_more ? r.next_cursor : null;
-      } while (cursor);
+      for (const id of sources.length ? sources : [ds]) {
+        let cursor;
+        do {
+          const r = await notion(`/data_sources/${id}/query`, {
+            method: "POST",
+            body: { page_size: 100, ...(cursor && { start_cursor: cursor }) },
+          });
+          pages.push(...r.results);
+          cursor = r.has_more ? r.next_cursor : null;
+        } while (cursor);
+      }
     } else if (voti) {
       // ripiego: solo i corsi che compaiono nelle righe di Voti
       const ids = new Set();

@@ -496,6 +496,7 @@ const state = {
   sortOpen: false,
   loading: true,
   source: "mock",
+  user: null,
 };
 const $ = (s) => document.querySelector(s);
 
@@ -670,6 +671,90 @@ async function loadNotes() {
   loadCourseIcons();
   loadCorrections(); // non blocca gli appunti: se la fonte "voti" non risponde, semplicemente non compare la sezione
 }
+
+/* ---------- Account e permessi (validati nuovamente dal backend) ---------- */
+let accessDraft = null;
+const authGate = $("#authGate");
+async function api(path, options = {}) {
+  const res = await fetch(`${API_BASE}${path}`, { credentials: "same-origin", ...options, headers: { "Content-Type": "application/json", ...(options.headers || {}) } });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return data;
+}
+function enterApp(user) {
+  state.user = user;
+  authGate.classList.add("hidden");
+  if (user.mustChangePassword) {
+    $("#changeGate").classList.remove("hidden");
+    $("#changeGate").classList.add("grid");
+    return;
+  }
+  $("#changeGate").classList.add("hidden");
+  $("#accountBar").classList.remove("hidden");
+  $("#accountName").textContent = `${user.name} · ${user.username}`;
+  $("#accessPanel").classList.toggle("hidden", user.role !== "superuser");
+  loadNotes();
+  if (user.role === "superuser") loadAccessSettings();
+}
+async function startAuth() {
+  if (!API_BASE) { $("#authError").textContent = "Avvia il server e apri il sito dal suo indirizzo per accedere."; return; }
+  try { enterApp(await api("/api/auth/me")); }
+  catch { authGate.classList.remove("hidden"); }
+}
+$("#authForm").addEventListener("submit", async e => {
+  e.preventDefault(); $("#authError").textContent = "";
+  try {
+    const user = await api("/api/auth/login", { method: "POST", body: JSON.stringify({ username: $("#authUsername").value, password: $("#authPassword").value }) });
+    enterApp(user);
+  } catch (err) { $("#authError").textContent = err.message; }
+});
+$("#changeForm").addEventListener("submit", async e => {
+  e.preventDefault(); $("#changeError").textContent = "";
+  try {
+    const user = await api("/api/auth/change-password", { method: "POST", body: JSON.stringify({ oldPassword: $("#oldPassword").value, password: $("#newPassword").value }) });
+    $("#authPassword").value = ""; $("#oldPassword").value = ""; $("#newPassword").value = "";
+    enterApp(user);
+  } catch (err) { $("#changeError").textContent = err.message; }
+});
+$("#logout").addEventListener("click", async () => {
+  try { await api("/api/auth/logout", { method: "POST", body: "{}" }); } catch {}
+  state.user = null; state.notes = []; state.corrections = []; render();
+  authGate.classList.remove("hidden"); $("#changeGate").classList.add("hidden"); $("#accountBar").classList.add("hidden");
+});
+async function loadAccessSettings() {
+  try {
+    accessDraft = await api("/api/admin/access");
+    const users = accessDraft.users;
+    const rows = [];
+    const draw = (kind, key, label) => {
+      const acl = accessDraft.access[kind][key];
+      const all = !Array.isArray(acl);
+      rows.push(`<div class="rounded-xl bg-white/[.04] p-3"><div class="mb-2 truncate font-medium text-slate-200" title="${esc(label)}">${esc(label)}</div><label class="flex items-center gap-2"><input type="checkbox" data-all="${kind}:${esc(key)}" ${all ? "checked" : ""}>Tutti gli account</label><select aria-label="Account autorizzati: ${esc(label)}" data-users="${kind}:${esc(key)}" multiple ${all ? "disabled" : ""} class="mt-2 w-full rounded-lg bg-ink-900 p-2 text-slate-200">${users.map(u => `<option value="${esc(u.id)}" ${acl?.includes(u.id) ? "selected" : ""}>${esc(u.name)} (${esc(u.username)})</option>`).join("")}</select><p class="mt-1 text-[10px] text-slate-500">Per selezionare più account, usa Ctrl o ⌘.</p></div>`);
+    };
+    rows.push('<p class="text-indigo-200 font-semibold">Materie</p>');
+    const courses = [...new Set(accessDraft.notes.flatMap(n => n.courses))].sort();
+    courses.forEach(c => draw("courses", c, c));
+    rows.push('<p class="pt-2 text-indigo-200 font-semibold">Note</p>');
+    accessDraft.notes.forEach(n => draw("notes", n.id, n.title));
+    $("#accessControls").innerHTML = rows.join("");
+  } catch (e) { $("#accessStatus").textContent = e.message; }
+}
+$("#accessControls").addEventListener("change", e => {
+  const all = e.target.closest("[data-all]");
+  if (all) { const select = $("#accessControls").querySelector(`[data-users="${CSS.escape(all.dataset.all)}"]`); select.disabled = all.checked; }
+});
+$("#saveAccess").addEventListener("click", async () => {
+  if (!accessDraft) return;
+  const next = { notes: {}, courses: {} };
+  $("#accessControls").querySelectorAll("[data-users]").forEach(select => {
+    const sep = select.dataset.users.indexOf(":");
+    const kind = select.dataset.users.slice(0, sep), key = select.dataset.users.slice(sep + 1);
+    const all = $("#accessControls").querySelector(`[data-all="${CSS.escape(select.dataset.users)}"]`).checked;
+    if (!all) next[kind][key] = [...select.selectedOptions].map(o => o.value);
+  });
+  try { await api("/api/admin/access", { method: "PUT", body: JSON.stringify(next) }); $("#accessStatus").textContent = "Permessi salvati."; loadNotes(); }
+  catch (e) { $("#accessStatus").textContent = e.message; }
+});
 
 async function loadCourseIcons() {
   let raw = {};
@@ -1473,4 +1558,4 @@ document.addEventListener("keydown", (e) => {
   }
 });
 
-loadNotes();
+startAuth();

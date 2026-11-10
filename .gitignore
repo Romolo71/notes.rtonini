@@ -1,0 +1,9 @@
+accounts*.json
+accounts.json.*.tmp
+password-temporanee-5ib.csv
+password-temporanee-php.csv
+password-reset-*.txt
+.private/
+data/*.sqlite
+data/*.sqlite-*
+.env

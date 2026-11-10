@@ -115,6 +115,10 @@
         <span id="syncDot" class="h-2 w-2 rounded-full bg-slate-600"></span>
         <span id="syncLabel">Caricamento…</span>
       </div>
+      <div id="accountBar" class="hidden px-5 pb-4 text-xs text-slate-400">
+        <div class="flex items-center justify-between gap-3"><span id="accountName"></span><button id="logout" class="text-indigo-300 hover:text-white">Esci</button></div>
+        <details id="accessPanel" class="hidden mt-3"><summary class="cursor-pointer text-indigo-300">Gestisci visibilità</summary><div id="accessControls" class="mt-3 max-h-[45vh] overflow-y-auto space-y-3"></div><button id="saveAccess" class="mt-3 rounded-lg bg-indigo-500 px-3 py-2 text-white">Salva permessi</button><p id="accessStatus" class="mt-2"></p></details>
+      </div>
     </aside>
 
     <!-- ============ MAIN ============ -->
@@ -136,6 +140,26 @@
         </div>
       </div>
     </main>
+  </div>
+  <div id="authGate" class="fixed inset-0 z-[100] grid place-items-center bg-ink-950/95 p-5">
+    <form id="authForm" class="w-full max-w-md rounded-3xl border border-white/10 bg-ink-850 p-8 shadow-2xl">
+      <h2 class="text-2xl font-bold text-white">Accedi agli appunti</h2>
+      <p class="mt-2 text-sm text-slate-400">Effettua l’accesso per visualizzare note e materie.</p>
+      <label class="mt-6 block text-sm text-slate-300">Cognome<input id="authUsername" type="text" required autocomplete="username" autocapitalize="none" class="mt-2 w-full rounded-xl border border-white/10 bg-ink-900 px-4 py-3 text-white"></label>
+      <label class="mt-4 block text-sm text-slate-300">Password<input id="authPassword" type="password" required autocomplete="current-password" class="mt-2 w-full rounded-xl border border-white/10 bg-ink-900 px-4 py-3 text-white"></label>
+      <p id="authError" class="mt-3 min-h-5 text-sm text-rose-300" role="alert"></p>
+      <button id="authSubmit" class="mt-2 w-full rounded-xl bg-indigo-500 px-4 py-3 font-semibold text-white hover:bg-indigo-400">Accedi</button>
+    </form>
+  </div>
+  <div id="changeGate" class="fixed inset-0 z-[110] hidden place-items-center bg-ink-950/95 p-5">
+    <form id="changeForm" class="w-full max-w-md rounded-3xl border border-white/10 bg-ink-850 p-8 shadow-2xl">
+      <h2 class="text-2xl font-bold text-white">Crea la tua password</h2>
+      <p class="mt-2 text-sm text-slate-400">Al primo accesso devi sostituire la password temporanea con una password personale di almeno 12 caratteri.</p>
+      <label class="mt-6 block text-sm text-slate-300">Password temporanea<input id="oldPassword" type="password" required autocomplete="current-password" class="mt-2 w-full rounded-xl border border-white/10 bg-ink-900 px-4 py-3 text-white"></label>
+      <label class="mt-4 block text-sm text-slate-300">Nuova password<input id="newPassword" type="password" required minlength="12" autocomplete="new-password" class="mt-2 w-full rounded-xl border border-white/10 bg-ink-900 px-4 py-3 text-white"></label>
+      <p id="changeError" class="mt-3 min-h-5 text-sm text-rose-300" role="alert"></p>
+      <button class="mt-2 w-full rounded-xl bg-indigo-500 px-4 py-3 font-semibold text-white hover:bg-indigo-400">Salva password e continua</button>
+    </form>
   </div>
 
   <!-- ============ MODAL ============ -->

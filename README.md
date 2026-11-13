@@ -10,14 +10,23 @@ sudo apt install php-cli php-sqlite3 php-curl sqlite3
 php -m | grep -E 'PDO|pdo_sqlite|curl'
 ```
 
+Configura i segreti una sola volta:
+
+```sh
+cp .env.example .env
+nano .env
+chmod 600 .env
+```
+
+Inserisci il token e l’ID del database Notion in `.env`. Il file è escluso da Git; PHP lo legge senza dipendenze Composer e le variabili impostate nel processo hanno la precedenza.
+
 Avvio locale da terminale:
 
 ```sh
-COOKIE_SECURE=false NOTION_TOKEN='secret_…' NOTION_DATABASE_ID='…' \
-  php -S 127.0.0.1:8000 server.php
+php -S 127.0.0.1:8000 server.php
 ```
 
-Apri `http://127.0.0.1:8000`. `COOKIE_SECURE=false` vale solo per HTTP locale. In produzione servi sito e `/api/` dallo stesso dominio HTTPS tramite Nginx e PHP-FPM; inoltra `Host`, imposta `X-Forwarded-Proto` al protocollo pubblico e sovrascrivi `X-Forwarded-For` con l’indirizzo client. Nginx deve inoltrare `server.php` a PHP-FPM e negare l’accesso a `/.private/`, `/.git/` e ai file `.sqlite`, `.db`, `.json` e `.csv`. Non disattivare `Secure` in produzione. Il server PHP integrato serve direttamente solo CSS, JavaScript e immagini.
+Apri `http://127.0.0.1:8000`. `COOKIE_SECURE=false` nel file di esempio vale solo per HTTP locale. In produzione servi sito e `/api/` dallo stesso dominio HTTPS tramite Nginx e PHP-FPM; inoltra `Host`, imposta `X-Forwarded-Proto` al protocollo pubblico e sovrascrivi `X-Forwarded-For` con l’indirizzo client. Nginx deve inoltrare `server.php` a PHP-FPM e negare l’accesso a `/.private/`, `/.git/` e ai file `.sqlite`, `.db`, `.json` e `.csv`. Non disattivare `Secure` in produzione. Il server PHP integrato serve direttamente solo CSS, JavaScript e immagini.
 
 Il file `.private/appunti.sqlite` viene creato al primo avvio in una cartella con permessi `0700`; il file usa `0600`. Puoi cambiare percorso con `SQLITE_FILE`, mantenendolo fuori dalla root pubblica del sito. Le tabelle SQL contengono utenti, sessioni, permessi per nota/materia, tentativi di accesso e cache Notion. Password e sessioni sono hash nel database; i cookie sono `HttpOnly`, `SameSite=Strict` e validi sette giorni.
 

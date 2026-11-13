@@ -692,9 +692,8 @@ function enterApp(user) {
   $("#changeGate").classList.add("hidden");
   $("#accountBar").classList.remove("hidden");
   $("#accountName").textContent = `${user.name} · ${user.username}`;
-  $("#accessPanel").classList.toggle("hidden", user.role !== "superuser");
+  $("#manageVisibility").classList.toggle("hidden", user.role !== "superuser");
   loadNotes();
-  if (user.role === "superuser") loadAccessSettings();
 }
 async function startAuth() {
   if (!API_BASE) { $("#authError").textContent = "Avvia il server e apri il sito dal suo indirizzo per accedere."; return; }
@@ -724,36 +723,104 @@ $("#logout").addEventListener("click", async () => {
 async function loadAccessSettings() {
   try {
     accessDraft = await api("/api/admin/access");
-    const users = accessDraft.users;
-    const rows = [];
-    const draw = (kind, key, label) => {
-      const acl = accessDraft.access[kind][key];
-      const all = !Array.isArray(acl);
-      rows.push(`<div class="rounded-xl bg-white/[.04] p-3"><div class="mb-2 truncate font-medium text-slate-200" title="${esc(label)}">${esc(label)}</div><label class="flex items-center gap-2"><input type="checkbox" data-all="${kind}:${esc(key)}" ${all ? "checked" : ""}>Tutti gli account</label><select aria-label="Account autorizzati: ${esc(label)}" data-users="${kind}:${esc(key)}" multiple ${all ? "disabled" : ""} class="mt-2 w-full rounded-lg bg-ink-900 p-2 text-slate-200">${users.map(u => `<option value="${esc(u.id)}" ${acl?.includes(u.id) ? "selected" : ""}>${esc(u.name)} (${esc(u.username)})</option>`).join("")}</select><p class="mt-1 text-[10px] text-slate-500">Per selezionare più account, usa Ctrl o ⌘.</p></div>`);
-    };
-    rows.push('<p class="text-indigo-200 font-semibold">Materie</p>');
-    const courses = [...new Set(accessDraft.notes.flatMap(n => n.courses))].sort();
-    courses.forEach(c => draw("courses", c, c));
-    rows.push('<p class="pt-2 text-indigo-200 font-semibold">Note</p>');
-    accessDraft.notes.forEach(n => draw("notes", n.id, n.title));
-    $("#accessControls").innerHTML = rows.join("");
-  } catch (e) { $("#accessStatus").textContent = e.message; }
+    renderAccessSettings();
+    $("#accessStatus").textContent = "Sezioni pronte. Apri una materia o una nota per modificare gli account autorizzati.";
+    $("#saveAccess").disabled = false;
+  } catch (e) { accessDraft = null; $("#saveAccess").disabled = true; $("#accessStatus").textContent = e.message; }
+}
+function renderAccessSettings() {
+  if (!accessDraft) return;
+  const users = accessDraft.users.filter(u => u.role !== "superuser");
+  const makeEntry = (kind, key, label) => {
+    const allowed = accessDraft.access[kind][key];
+    const everyone = !Array.isArray(allowed);
+    const chosen = everyone ? new Set(users.map(u => u.id)) : new Set(allowed);
+    const count = [...chosen].filter(id => users.some(u => u.id === id)).length;
+    const search = norm(label);
+    return `<details class="access-entry group overflow-hidden rounded-2xl border border-white/[.07] bg-white/[.025]" data-entry data-kind="${kind}" data-key="${esc(key)}" data-search="${esc(search)}">
+      <summary class="flex cursor-pointer list-none items-center gap-3 px-4 py-4 transition hover:bg-white/[.04] [&::-webkit-details-marker]:hidden sm:px-5">
+        <span class="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-indigo-400/10 text-indigo-200"><svg class="h-4 w-4 transition group-open:rotate-90" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="m9 18 6-6-6-6"/></svg></span>
+        <span class="min-w-0 flex-1 truncate text-sm font-semibold text-slate-100 sm:text-base" title="${esc(label)}">${esc(label)}</span>
+        <span data-count class="shrink-0 rounded-full bg-white/[.06] px-2.5 py-1 text-[11px] font-medium text-slate-400">${everyone ? "Tutti gli utenti" : `${count} account`}</span>
+      </summary>
+      <div class="border-t border-white/[.06] px-4 py-4 sm:px-5 sm:py-5">
+        <label class="flex cursor-pointer items-center gap-3 rounded-xl border border-indigo-400/15 bg-indigo-400/[.06] px-3 py-3 text-sm font-semibold text-indigo-100 transition hover:bg-indigo-400/10">
+          <input class="access-everyone h-4 w-4 accent-indigo-400" type="checkbox" ${everyone ? "checked" : ""}>
+          <span>Tutti gli utenti possono vedere ${kind === "notes" ? "questa nota" : "questa materia"}</span>
+        </label>
+        <p class="mb-3 mt-5 text-xs font-semibold uppercase tracking-wider text-slate-500">Account autorizzati</p>
+        <div class="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          ${users.map(u => `<label class="flex cursor-pointer items-center gap-3 rounded-xl border border-white/[.05] bg-ink-900/70 px-3 py-3 text-sm text-slate-300 transition hover:border-white/10 hover:bg-ink-900"><input class="access-user h-4 w-4 accent-indigo-400" type="checkbox" value="${esc(u.id)}" ${chosen.has(u.id) ? "checked" : ""} ${everyone ? "disabled" : ""}><span class="min-w-0"><span class="block truncate font-medium text-slate-200">${esc(u.name)}</span><span class="block text-xs text-slate-500">${esc(u.username)}</span></span></label>`).join("")}
+        </div>
+        <p class="mt-3 text-xs text-slate-500">Il superutente conserva sempre accesso.</p>
+      </div>
+    </details>`;
+  };
+  const courses = [...new Set(accessDraft.notes.flatMap(n => n.courses))].sort((a, b) => a.localeCompare(b, "it"));
+  const subjectEntries = courses.map(c => makeEntry("courses", c, c)).join("");
+  const noteEntries = accessDraft.notes.map(n => makeEntry("notes", n.id, n.title)).join("");
+  $("#accessControls").innerHTML = `
+    <details class="access-section overflow-hidden rounded-2xl border border-white/[.08] bg-ink-900/45" data-access-section open>
+      <summary class="flex cursor-pointer list-none items-center gap-3 px-4 py-4 sm:px-5 [&::-webkit-details-marker]:hidden"><span class="text-base font-bold text-white">Materie</span><span class="rounded-full bg-white/[.06] px-2.5 py-1 text-xs text-slate-400">${courses.length}</span><span class="ml-auto text-xs text-slate-500">Apri per modificare</span></summary>
+      <div class="space-y-2 border-t border-white/[.06] p-3 sm:p-4">${subjectEntries || '<p class="px-2 py-4 text-sm text-slate-500">Nessuna materia trovata.</p>'}</div>
+    </details>
+    <details class="access-section overflow-hidden rounded-2xl border border-white/[.08] bg-ink-900/45" data-access-section>
+      <summary class="flex cursor-pointer list-none items-center gap-3 px-4 py-4 sm:px-5 [&::-webkit-details-marker]:hidden"><span class="text-base font-bold text-white">Note</span><span class="rounded-full bg-white/[.06] px-2.5 py-1 text-xs text-slate-400">${accessDraft.notes.length}</span><span class="ml-auto text-xs text-slate-500">Apri per modificare</span></summary>
+      <div class="space-y-2 border-t border-white/[.06] p-3 sm:p-4">${noteEntries || '<p class="px-2 py-4 text-sm text-slate-500">Nessuna nota trovata.</p>'}</div>
+    </details>`;
+}
+function updateAccessEntry(entry) {
+  const everyone = entry.querySelector(".access-everyone").checked;
+  const userChecks = [...entry.querySelectorAll(".access-user")];
+  userChecks.forEach(cb => { cb.disabled = everyone; });
+  const count = userChecks.filter(cb => cb.checked).length;
+  entry.querySelector("[data-count]").textContent = everyone ? "Tutti gli utenti" : `${count} account`;
 }
 $("#accessControls").addEventListener("change", e => {
-  const all = e.target.closest("[data-all]");
-  if (all) { const select = $("#accessControls").querySelector(`[data-users="${CSS.escape(all.dataset.all)}"]`); select.disabled = all.checked; }
+  const entry = e.target.closest("[data-entry]");
+  if (entry && (e.target.matches(".access-everyone") || e.target.matches(".access-user"))) updateAccessEntry(entry);
 });
+$("#accessSearch").addEventListener("input", e => {
+  const query = norm(e.target.value);
+  $("#accessControls").querySelectorAll("[data-entry]").forEach(entry => { entry.hidden = !!query && !entry.dataset.search.includes(query); });
+});
+function closeAccessManager() {
+  $("#accessModal").classList.add("hidden");
+  $("#accessModal").setAttribute("aria-hidden", "true");
+  document.body.style.overflow = "";
+  $("#manageVisibility").focus({ preventScroll: true });
+}
+async function openAccessManager() {
+  if (state.user?.role !== "superuser") return;
+  toggleSidebar(false);
+  accessDraft = null;
+  $("#accessModal").classList.remove("hidden");
+  $("#accessModal").setAttribute("aria-hidden", "false");
+  document.body.style.overflow = "hidden";
+  $("#accessStatus").textContent = "Caricamento…";
+  $("#saveAccess").disabled = true;
+  $("#accessControls").innerHTML = "";
+  $("#accessSearch").value = "";
+  $("#closeAccess").focus({ preventScroll: true });
+  await loadAccessSettings();
+}
+$("#manageVisibility").addEventListener("click", openAccessManager);
+$("#closeAccess").addEventListener("click", closeAccessManager);
+$("#cancelAccess").addEventListener("click", closeAccessManager);
+$("#accessBackdrop").addEventListener("click", closeAccessManager);
 $("#saveAccess").addEventListener("click", async () => {
   if (!accessDraft) return;
+  const button = $("#saveAccess"); button.disabled = true;
   const next = { notes: {}, courses: {} };
-  $("#accessControls").querySelectorAll("[data-users]").forEach(select => {
-    const sep = select.dataset.users.indexOf(":");
-    const kind = select.dataset.users.slice(0, sep), key = select.dataset.users.slice(sep + 1);
-    const all = $("#accessControls").querySelector(`[data-all="${CSS.escape(select.dataset.users)}"]`).checked;
-    if (!all) next[kind][key] = [...select.selectedOptions].map(o => o.value);
+  $("#accessControls").querySelectorAll("[data-entry]").forEach(entry => {
+    const { kind, key } = entry.dataset;
+    if (!entry.querySelector(".access-everyone").checked) {
+      next[kind][key] = [...entry.querySelectorAll(".access-user:checked")].map(o => o.value);
+    }
   });
-  try { await api("/api/admin/access", { method: "PUT", body: JSON.stringify(next) }); $("#accessStatus").textContent = "Permessi salvati."; loadNotes(); }
+  try { await api("/api/admin/access", { method: "PUT", body: JSON.stringify(next) }); accessDraft.access = next; $("#accessStatus").textContent = "Modifiche salvate."; loadNotes(); }
   catch (e) { $("#accessStatus").textContent = e.message; }
+  finally { button.disabled = false; }
 });
 
 async function loadCourseIcons() {
@@ -1539,6 +1606,10 @@ document.addEventListener("click", (e) => {
   }
 });
 document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !$("#accessModal").classList.contains("hidden")) {
+    closeAccessManager();
+    return;
+  }
   if (e.key === "Escape" && state.sortOpen) {
     state.sortOpen = false;
     render();

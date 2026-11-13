@@ -21,8 +21,33 @@ const ROSTER = [
     ['morettin', 'Morettin Matteo'], ['roibu', 'Roibu Marco'],
     ['rossi', 'Rossi Emanuele'], ['tonini', 'Tonini Riccardo'],
     ['yasashiniy', 'Yasashiniy Nikita'], ['zambelli', 'Zambelli Anna'],
-    ['zhang', 'Zhang Le Lihao'],
+    ['zhang', 'Zhang Lelihao'],
 ];
+
+// Lightweight .env reader: process environment variables take precedence.
+function loadDotEnv(): void {
+    $file = __DIR__ . '/.env';
+    if (!is_file($file) || !is_readable($file)) return;
+    foreach (file($file, FILE_IGNORE_NEW_LINES) ?: [] as $line) {
+        $line = trim($line);
+        if ($line === '' || str_starts_with($line, '#')) continue;
+        if (!preg_match('/^([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/', $line, $match)) continue;
+        $key = $match[1];
+        if (getenv($key) !== false) continue;
+        $value = trim($match[2]);
+        if (strlen($value) >= 2 && (($value[0] === '"' && str_ends_with($value, '"')) || ($value[0] === "'" && str_ends_with($value, "'")))) {
+            $quote = $value[0];
+            $value = substr($value, 1, -1);
+            if ($quote === '"') $value = stripcslashes($value);
+        } else {
+            $value = preg_replace('/\s+#.*$/', '', $value) ?? $value;
+        }
+        putenv($key . '=' . $value);
+        $_ENV[$key] = $value;
+        $_SERVER[$key] = $value;
+    }
+}
+loadDotEnv();
 
 final class HttpError extends RuntimeException {
     public function __construct(public int $status, string $message) { parent::__construct($message); }

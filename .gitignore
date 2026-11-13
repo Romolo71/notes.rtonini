@@ -7,3 +7,4 @@ password-reset-*.txt
 data/*.sqlite
 data/*.sqlite-*
 .env
+.env.example
